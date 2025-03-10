@@ -31,7 +31,8 @@ app.post("/ask", async (req, res) => {
     }
 });
 
-// Avvia il server
-app.listen(PORT, () => {
-    console.log(`Server online su http://localhost:${PORT}`);
+app.listen(PORT, "0.0.0.0", () => {
+    console.log(`🚀 Server running on port ${PORT}`);
 });
+
+
