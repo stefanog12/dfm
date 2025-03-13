@@ -1,38 +1,25 @@
 const express = require("express");
-const axios = require("axios");
-require("dotenv").config();
+const twilio = require("twilio");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Middleware per gestire il JSON
-app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
-// Endpoint per ricevere richieste e interagire con OpenAI
-app.post("/ask", async (req, res) => {
-    const userMessage = req.body.message || "Ciao, dimmi una curiosità!";
-    
-    try {
-        const response = await axios.post(
-            "https://api.openai.com/v1/chat/completions",
-            {
-                model: "gpt-4-turbo",
-                messages: [{ role: "user", content: userMessage }],
-                max_tokens: 50
-            },
-            {
-                headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}` }
-            }
-        );
+// Route principale per gestire le chiamate in arrivo
+app.post("/twilio", (req, res) => {
+    console.log("📞 Chiamata ricevuta da:", req.body.From);
 
-        res.json({ reply: response.data.choices[0].message.content });
-    } catch (error) {
-        res.status(500).json({ error: error.response?.data || error.message });
-    }
+    // Creiamo la risposta vocale per Twilio
+    const twiml = new twilio.twiml.VoiceResponse();
+    twiml.say("Ciao! Questa è una risposta automatica dal server.", { voice: "alice", language: "it-IT" });
+
+    res.type("text/xml");
+    res.send(twiml.toString());
 });
 
+// Avvia il server
 app.listen(PORT, "0.0.0.0", () => {
-    console.log(`🚀 Server running on port ${PORT}`);
+    console.log(`🚀 Server in ascolto su http://localhost:${PORT}`);
 });
-
 
