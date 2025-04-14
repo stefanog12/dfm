@@ -5,7 +5,7 @@ const axios = require('axios');
 const bodyParser = require('body-parser');
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 4000;
 
 // Middlewares
 app.use(bodyParser.urlencoded({ extended: false }));
@@ -47,7 +47,7 @@ wss.on("connection", (ws) => {
         {
           audio: audioData,
           voice: "onyx", // puoi usare anche nova, shimmer, ecc.
-          model: "gpt-4-turbo"
+          model: "gpt-3.5-turbo"
         },
         {
           headers: {
