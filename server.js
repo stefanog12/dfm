@@ -13,6 +13,9 @@ const server = app.listen(PORT, '0.0.0.0', () => {
     console.log(`✅ Server attivo su http://0.0.0.0:${PORT}`);
 });
 
+app.get("/", (req, res) => {
+  res.send("✅ Server WebSocket attivo");
+});
 
 const wss = new WebSocket.Server({ server });
 
