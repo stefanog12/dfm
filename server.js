@@ -33,6 +33,8 @@ const server = app.listen(PORT, '0.0.0.0', () => {
   console.log(`✅ Server attivo su http://0.0.0.0:${PORT}`);
 });
 
+console.log("Current working directory:", process.cwd());
+
 const wss = new WebSocket.Server({ server, path: "/audio" });
 
 wss.on("connection", (ws) => {
