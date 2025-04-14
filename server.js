@@ -7,6 +7,8 @@ const axios = require('axios');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+app.use(express.urlencoded({ extended: true }));
+
 const server = app.listen(PORT, '0.0.0.0', () => {
     console.log(`✅ Server attivo su http://0.0.0.0:${PORT}`);
 });
