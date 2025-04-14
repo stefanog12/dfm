@@ -1,127 +1,70 @@
 require('dotenv').config();
 const express = require('express');
-const { Readable } = require('stream');
 const WebSocket = require('ws');
 const axios = require('axios');
+const bodyParser = require('body-parser');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-app.use(express.urlencoded({ extended: true }));
+// Middlewares
+app.use(bodyParser.urlencoded({ extended: false }));
+app.use(bodyParser.text({ type: 'text/xml' }));
 
-const server = app.listen(PORT, '0.0.0.0', () => {
-    console.log(`✅ Server attivo su http://0.0.0.0:${PORT}`);
-});
-
+// 🌐 Keep-alive route
 app.get("/", (req, res) => {
-  res.send("✅ Server WebSocket attivo");
+  res.send("✅ Server attivo e in ascolto");
 });
 
-const wss = new WebSocket.Server({ server });
+// 🎯 Route /twiml: restituisce il TwiML per iniziare lo streaming
+app.post("/twiml", (req, res) => {
+  res.set("Content-Type", "text/xml");
+  res.send(`
+    <Response>
+      <Connect>
+        <Stream url="wss://${process.env.DOMAIN}/audio" />
+      </Connect>
+    </Response>
+  `);
+});
 
-wss.on('connection', (ws) => {
-  console.log("🔗 Connessione WebSocket ricevuta da Twilio");
+// 🔌 Avvia il server HTTP e WebSocket
+const server = app.listen(PORT, '0.0.0.0', () => {
+  console.log(`✅ Server attivo su http://0.0.0.0:${PORT}`);
+});
 
-  let audioChunks = [];
+const wss = new WebSocket.Server({ server, path: "/audio" });
 
-  ws.on('message', async (msg) => {
-    // Twilio invia un JSON con base64 audio
+wss.on("connection", (ws) => {
+  console.log("🟢 Connessione WebSocket da Twilio ricevuta");
+
+  ws.on("message", async (audioData) => {
     try {
-      const data = JSON.parse(msg.toString());
+      console.log("🎤 Audio ricevuto, invio a OpenAI...");
 
-      if (data.event === "start") {
-        console.log("▶️ Stream iniziato");
-      } else if (data.event === "media") {
-        // Ricevi audio in base64 e salvalo
-        const audioBuf = Buffer.from(data.media.payload, 'base64');
-        audioChunks.push(audioBuf);
-      } else if (data.event === "stop") {
-        console.log("⏹️ Stream terminato. Invio audio a OpenAI...");
+      const response = await axios.post(
+        "https://api.openai.com/v1/audio/speech-to-speech",
+        {
+          audio: audioData,
+          voice: "onyx", // puoi usare anche nova, shimmer, ecc.
+          model: "gpt-3.5-turbo"
+        },
+        {
+          headers: {
+            Authorization: `Bearer ${process.env.OPENAI_API_KEY}`
+          },
+          responseType: "arraybuffer"
+        }
+      );
 
-        const audioBuffer = Buffer.concat(audioChunks);
-
-        // 1️⃣ Speech-to-Text: audio ➜ testo
-        const transcription = await transcribeAudio(audioBuffer);
-
-        console.log("🗣️ Utente ha detto:", transcription);
-
-        // 2️⃣ Chat completation: testo ➜ risposta
-        const reply = await getChatReply(transcription);
-
-        console.log("🤖 Risposta GPT:", reply);
-
-        // 3️⃣ Text-to-Speech: risposta ➜ audio
-        const speechBuffer = await textToSpeech(reply);
-
-        // 4️⃣ Invia audio a Twilio
-        ws.send(speechBuffer);
-
-        audioChunks = [];
-      }
-
-    } catch (err) {
-      console.error("❌ Errore:", err.message);
+      console.log("🔊 Risposta OpenAI ricevuta, inoltro a Twilio...");
+      ws.send(response.data);
+    } catch (error) {
+      console.error("❌ Errore OpenAI:", error.response?.data || error.message);
     }
   });
 
-  ws.on('close', () => {
-    console.log("🔴 Connessione WebSocket chiusa.");
+  ws.on("close", () => {
+    console.log("🔴 Connessione WebSocket chiusa");
   });
 });
-
-
-// 🔤 Funzione: Speech-to-Text
-async function transcribeAudio(audioBuffer) {
-  const response = await axios.post(
-    'https://api.openai.com/v1/audio/transcriptions',
-    audioBuffer,
-    {
-      headers: {
-        'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
-        'Content-Type': 'audio/wav'
-      }
-    }
-  );
-  return response.data.text;
-}
-
-// 💬 Funzione: GPT risposta
-async function getChatReply(prompt) {
-  const response = await axios.post(
-    'https://api.openai.com/v1/chat/completions',
-    {
-      model: process.env.MODEL || 'gpt-3.5-turbo',
-      messages: [
-        { role: "system", content: "Rispondi in modo naturale e amichevole come un assistente vocale." },
-        { role: "user", content: prompt }
-      ]
-    },
-    {
-      headers: {
-        'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
-        'Content-Type': 'application/json'
-      }
-    }
-  );
-  return response.data.choices[0].message.content;
-}
-
-// 🔊 Funzione: Text-to-Speech
-async function textToSpeech(text) {
-  const response = await axios.post(
-    'https://api.openai.com/v1/audio/speech',
-    {
-      model: 'tts-1',
-      voice: process.env.VOICE_ID || 'nova',
-      input: text
-    },
-    {
-      headers: {
-        'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
-        'Content-Type': 'application/json'
-      },
-      responseType: 'arraybuffer'
-    }
-  );
-  return response.data;
-}
