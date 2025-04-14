@@ -24,7 +24,7 @@ wss.on('connection', (ws) => {
 
   let audioChunks = [];
 
-  ws.on('message', async (msg) => {
+  wss.on('message', async (msg) => {
     // Twilio invia un JSON con base64 audio
     try {
       const data = JSON.parse(msg.toString());
@@ -54,7 +54,7 @@ wss.on('connection', (ws) => {
         const speechBuffer = await textToSpeech(reply);
 
         // 4️⃣ Invia audio a Twilio
-        ws.send(speechBuffer);
+        wss.send(speechBuffer);
 
         audioChunks = [];
       }
@@ -64,7 +64,7 @@ wss.on('connection', (ws) => {
     }
   });
 
-  ws.on('close', () => {
+  wss.on('close', () => {
     console.log("🔴 Connessione WebSocket chiusa.");
   });
 });
