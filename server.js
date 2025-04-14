@@ -1,25 +1,71 @@
-const express = require("express");
-const twilio = require("twilio");
+require('dotenv').config();
+const express = require('express');
+const WebSocket = require('ws');
+const axios = require('axios');
+const bodyParser = require('body-parser');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-app.use(express.urlencoded({ extended: true }));
+// Middlewares
+app.use(bodyParser.urlencoded({ extended: false }));
+app.use(bodyParser.text({ type: 'text/xml' }));
 
-// Route principale per gestire le chiamate in arrivo
-app.post("/twilio", (req, res) => {
-    console.log("📞 Chiamata ricevuta da:", req.body.From);
-
-    // Creiamo la risposta vocale per Twilio
-    const twiml = new twilio.twiml.VoiceResponse();
-    twiml.say("Ciao! Questa è una risposta automatica dal server.", { voice: "alice", language: "it-IT" });
-
-    res.type("text/xml");
-    res.send(twiml.toString());
+// 🌐 Keep-alive route
+app.get("/", (req, res) => {
+  res.send("✅ Server attivo e in ascolto");
 });
 
-// Avvia il server
-app.listen(PORT, "0.0.0.0", () => {
-    console.log(`🚀 Server in ascolto su http://localhost:${PORT}`);
+// 🎯 Route /twiml: restituisce il TwiML per iniziare lo streaming
+app.post("/twiml", (req, res) => {
+  res.set("Content-Type", "text/xml");
+  res.send(`
+    <Response>
+      <Connect>
+        <Stream url="wss://${process.env.DOMAIN}/audio" />
+      </Connect>
+    </Response>
+  `);
+});
+
+// 🔌 Avvia il server HTTP e WebSocket
+const server = app.listen(PORT, '0.0.0.0', () => {
+  console.log(`✅ Server attivo su http://0.0.0.0:${PORT}`);
+});
+
+const wss = new WebSocket.Server({ server, path: "/audio" });
+
+wss.on("connection", (ws) => {
+  console.log("🟢 Connessione WebSocket da Twilio ricevuta");
+
+  ws.on("message", async (audioData) => {
+    try {
+      console.log("🎤 Audio ricevuto, invio a OpenAI...");
+
+      const response = await axios.post(
+        "https://api.openai.com/v1/audio/speech-to-speech",
+        {
+          audio: audioData,
+          voice: "onyx", // puoi usare anche nova, shimmer, ecc.
+          model: "gpt-4-turbo"
+        },
+        {
+          headers: {
+            Authorization: `Bearer ${process.env.OPENAI_API_KEY}`
+          },
+          responseType: "arraybuffer"
+        }
+      );
+
+      console.log("🔊 Risposta OpenAI ricevuta, inoltro a Twilio...");
+      ws.send(response.data);
+    } catch (error) {
+      console.error("❌ Errore OpenAI:", error.response?.data || error.message);
+    }
+  });
+
+  ws.on("close", () => {
+    console.log("🔴 Connessione WebSocket chiusa");
+  });
 });
 
