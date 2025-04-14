@@ -4,9 +4,8 @@
   "description": "Server WebSocket per ricevere audio da Twilio e rispondere via OpenAI TTS",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
-    //,
-    //"dev": "nodemon server.js"
+    "start": "node server.js",
+    "dev": "nodemon server.js"
   },
   "keywords": [
     "twilio",
@@ -23,9 +22,8 @@
     "express": "^4.21.2",
     "twilio": "^4.23.0",
     "ws": "^8.18.1"
-  }
-  //,
-  //"devDependencies": {
-    //"nodemon": "^3.0.2"
-//  }
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.2"
+ }
 }
