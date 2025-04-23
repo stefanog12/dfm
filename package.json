@@ -1,6 +1,7 @@
   {
   "name": "twilio-openai-realtime",
   "version": "1.0.0",
+  "type": "module",
   "description": "Server Fastify + WebSocket per Twilio e OpenAI Realtime API",
   "main": "server.js",
   "scripts": {
