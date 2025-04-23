@@ -13,7 +13,7 @@
     "fastify",
     "websocket",
     "realtime",
-    "gpt-3.5"
+    "gpt-4o"
   ],
   "author": "IlTuoNome",
   "license": "MIT",
