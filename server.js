@@ -58,20 +58,23 @@ fastify.register(async (fastify) => {
             }
         });
 
+       // Initialize session with correct audio format for Twilio (PCMU)
         const initializeSession = () => {
-            const session = {
+            const sessionUpdate = {
                 type: 'session.update',
                 session: {
                     turn_detection: { type: 'server_vad' },
-                    input_audio_format: 'g711_ulaw',
-                    output_audio_format: 'g711_ulaw',
+                    input_audio_format: 'g711_ulaw',    // IMPORTANT: Twilio sends PCMU
+                    output_audio_format: 'g711_ulaw',   // Match PCMU output
                     voice: VOICE,
                     instructions: SYSTEM_MESSAGE,
-                    modalities: ['text', 'audio'],
+                    modalities: ["text", "audio"],
                     temperature: 0.8,
                 }
             };
-            openAiWs.send(JSON.stringify(session));
+
+            console.log('👉 Sending session update:', JSON.stringify(sessionUpdate));
+            openAiWs.send(JSON.stringify(sessionUpdate));
         };
 
         const handleSpeechStartedEvent = () => {
