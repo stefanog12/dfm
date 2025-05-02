@@ -25,6 +25,9 @@
     "fastify": "^5.0.0",
     "ws": "^8.18.0"
   },
+  "engines": {
+  "node": ">=20"
+},
   "devDependencies": {
     "nodemon": "^3.0.2"
   }
