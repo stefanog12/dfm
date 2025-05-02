@@ -73,13 +73,22 @@ fastify.register(async (fastify) => {
                 }
             };
 
-            console.log('👉 Sending session update:', JSON.stringify(sessionUpdate));
-            openAiWs.send(JSON.stringify(sessionUpdate));
+            // console.log('👉 Sending session update:', JSON.stringify(sessionUpdate));
+           // openAiWs.send(JSON.stringify(sessionUpdate));
+
+            console.log('👉 [SESSION INIT] Sending session update:', JSON.stringify(sessionUpdate, null, 2));
+            try {
+                openAiWs.send(JSON.stringify(sessionUpdate));
+            } catch (err) {
+                console.error('🚨 [SESSION INIT] Failed to send session update:', err);
+            }
         };
 
         const handleSpeechStartedEvent = () => {
+            console.log('🔊 Speech started detected from OpenAI');
             if (markQueue.length > 0 && responseStartTimestampTwilio != null) {
                 const elapsedTime = latestMediaTimestamp - responseStartTimestampTwilio;
+                console.log(`⏱️ Truncating last assistant item at ${elapsedTime} ms`);
                 if (lastAssistantItem) {
                     openAiWs.send(JSON.stringify({
                         type: 'conversation.item.truncate',
@@ -97,6 +106,7 @@ fastify.register(async (fastify) => {
 
         const sendMark = () => {
             if (streamSid) {
+                console.log('✅ Sending mark to Twilio');
                 conn.send(JSON.stringify({
                     event: 'mark',
                     streamSid,
@@ -107,18 +117,22 @@ fastify.register(async (fastify) => {
         };
 
         openAiWs.on('open', () => {
-            console.log('🧠 Connessione OpenAI attiva');
+           // console.log('🧠 Connessione OpenAI attiva');
+            console.log('🧠 OpenAI WebSocket connection opened (readyState:', openAiWs.readyState, ')');
             initializeSession();
         });
 
         openAiWs.on('message', (data) => {
+            console.log('📩 [FROM OPENAI] Message received');
             try {
                 const msg = JSON.parse(data);
                 if (LOG_EVENT_TYPES.includes(msg.type)) {
-                    console.log(`[OpenAI] ${msg.type}`, msg);
+                   // console.log(`[OpenAI] ${msg.type}`, msg);
+                    console.log(`[OpenAI EVENT] ${msg.type}`, JSON.stringify(msg, null, 2));
                 }
 
                 if (msg.type === 'response.audio.delta' && msg.delta) {
+                     console.log('🔊 [AUDIO DELTA] Sending audio chunk to Twilio');
                     conn.send(JSON.stringify({
                         event: 'media',
                         streamSid,
@@ -126,6 +140,7 @@ fastify.register(async (fastify) => {
                     }));
 
                     if (!responseStartTimestampTwilio) {
+                        console.log('⏳ First audio chunk, marking timestamp');
                         responseStartTimestampTwilio = latestMediaTimestamp;
                     }
 
@@ -143,25 +158,34 @@ fastify.register(async (fastify) => {
         });
 
         conn.on('message', (msg) => {
+            console.log('📨 [FROM TWILIO] Message received');
             try {
                 const data = JSON.parse(msg);
+                console.log('[FROM TWILIO] Event:', data.event);
                 switch (data.event) {
                     case 'media':
                         latestMediaTimestamp = data.media.timestamp;
+                         console.log(`🎙️ [MEDIA] Timestamp: ${latestMediaTimestamp}`);
                         if (openAiWs.readyState === WebSocket.OPEN) {
+                            console.log('➡️ Sending audio to OpenAI (buffer.append)');
                             openAiWs.send(JSON.stringify({
                                 type: 'input_audio_buffer.append',
                                 audio: data.media.payload
                             }));
+                        }else {
+                            console.warn('⚠️ OpenAI WebSocket not open, cannot send audio');
                         }
                         break;
                     case 'start':
                         streamSid = data.start.streamSid;
-                        console.log('Stream iniziato:', streamSid);
+                        console.log('🚀 Stream started. SID:', streamSid);
                         break;
                     case 'mark':
+                        console.log('✅ [MARK] Acknowledged by Twilio');
                         if (markQueue.length > 0) markQueue.shift();
                         break;
+                    default:
+                        console.log('ℹ️ [OTHER EVENT] Full data:', JSON.stringify(data));
                 }
             } catch (err) {
                 console.error('Errore parsing da Twilio:', err);
@@ -169,8 +193,13 @@ fastify.register(async (fastify) => {
         });
 
         conn.on('close', () => {
-            if (openAiWs.readyState === WebSocket.OPEN) openAiWs.close();
-            console.log('❌ Client Twilio disconnesso');
+            console.log('❌ Twilio WebSocket connection closed');
+            if (openAiWs.readyState === WebSocket.OPEN) {
+                console.log('🔒 Closing OpenAI WebSocket as well');
+                openAiWs.close();
+            } else {
+                console.log('✅ OpenAI WebSocket already closed');
+            }
         });
 
         openAiWs.on('error', (err) => {
