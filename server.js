@@ -6,6 +6,46 @@ import fastifyWs from '@fastify/websocket';
 
 dotenv.config();
 
+// ==== RAG: caricamento embeddings stile ====
+import fs from "fs";
+import path from "path";
+
+const EMBEDDINGS_PATH = path.join(process.cwd(), "embeddings.json");
+let RAG_DATA = [];
+
+try {
+    if (fs.existsSync(EMBEDDINGS_PATH)) {
+        RAG_DATA = JSON.parse(fs.readFileSync(EMBEDDINGS_PATH, "utf8"));
+        console.log(`📚 RAG: caricati ${RAG_DATA.length} embeddings`);
+    } else {
+        console.log("⚠️ RAG: nessun embeddings.json trovato");
+    }
+} catch (err) {
+    console.error("❌ Errore caricamento RAG:", err);
+}
+
+// funzione minimale cosine similarity
+function cosine(a, b) {
+    let dot = 0, na = 0, nb = 0;
+    for (let i = 0; i < a.length; i++) {
+        dot += a[i] * b[i];
+        na += a[i] * a[i];
+        nb += b[i] * b[i];
+    }
+    return dot / (Math.sqrt(na) * Math.sqrt(nb));
+}
+
+// Recupera i migliori 3 messaggi simili allo stile richiesto
+function ragRetrieve(queryEmbedding, topK = 3) {
+    return RAG_DATA
+        .map(item => ({
+            ...item,
+            score: cosine(queryEmbedding, item.embedding)
+        }))
+        .sort((a, b) => b.score - a.score)
+        .slice(0, topK);
+}
+
 console.log("Chiave API:", process.env.OPENAI_API_KEY);
 
 const { OPENAI_API_KEY } = process.env;
@@ -67,7 +107,8 @@ fastify.register(async (fastify) => {
                     input_audio_format: 'g711_ulaw',    // IMPORTANT: Twilio sends PCMU
                     output_audio_format: 'g711_ulaw',   // Match PCMU output
                     voice: VOICE,
-                    instructions: SYSTEM_MESSAGE,
+                   // senza RAG instructions: SYSTEM_MESSAGE,
+                    instructions: SYSTEM_MESSAGE + (globalThis.STYLE_HINT ? ("\n\n### Style guidance:\n" + globalThis.STYLE_HINT) : ""),
                     modalities: ["text", "audio"],
                     temperature: 0.8,
                 }
@@ -148,6 +189,32 @@ fastify.register(async (fastify) => {
 
                     sendMark();
                 }
+
+                // ==== RAG STYLE INJECTION ====
+
+                if (msg.type === "response.created") {
+                       const userText = msg.response?.input_text || "";
+
+                if (userText && userText.length > 0) {
+                        ragSearch(userText).then(results => {
+                if (results.length > 0) {
+                        const styleNotes = results.map(r => `- ${r.content}`).join("\n");
+
+                        console.log("🎨 RAG style injected:\n", styleNotes);
+
+                        openAiWs.send(JSON.stringify({
+                           type: "session.update",
+                            session: {
+                                instructions:
+                                 SYSTEM_MESSAGE +
+                                 "\n\n### Voice Style Examples from previous calls:\n" +
+                                 styleNotes
+                            }
+                         }));
+            }
+        });
+    }
+}
 
                 if (msg.type === 'input_audio_buffer.speech_started') {
                     handleSpeechStartedEvent();
