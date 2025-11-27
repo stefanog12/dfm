@@ -10,7 +10,7 @@ dotenv.config();
 import fs from "fs";
 import path from "path";
 
-const EMBEDDINGS_PATH = path.join(process.cwd(), "embeddings.json");
+const EMBEDDINGS_PATH = path.join(process.cwd(), "memory_vectors.json");
 let RAG_DATA = [];
 
 try {
