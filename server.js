@@ -3,164 +3,217 @@ import WebSocket from 'ws';
 import dotenv from 'dotenv';
 import fastifyFormBody from '@fastify/formbody';
 import fastifyWs from '@fastify/websocket';
-import fs from 'fs';
-import path from 'path';
-import OpenAI from 'openai';
+import fetch from "node-fetch";
 
 dotenv.config();
 
-console.log("Chiave API:", process.env.OPENAI_API_KEY);
-const { OPENAI_API_KEY } = process.env;
+const { OPENAI_API_KEY, RAG_ENDPOINT } = process.env;
+
 if (!OPENAI_API_KEY) {
-    console.error('Missing OpenAI API key. Please set it in the .env file.');
+    console.error('Missing OpenAI API key.');
     process.exit(1);
 }
 
-// ==== RAG: caricamento embeddings stile ====
-const EMBEDDINGS_PATH = path.join(process.cwd(), 'memory_vectors.json');
-let RAG_DATA = [];
-try {
-  if (fs.existsSync(EMBEDDINGS_PATH)) {
-    RAG_DATA = JSON.parse(fs.readFileSync(EMBEDDINGS_PATH, 'utf8'));
-    console.log(`📚 RAG: caricati ${RAG_DATA.length} embeddings`);
-  } else {
-    console.log('⚠️ RAG: nessun memory_vectors.json trovato');
-  }
-} catch (err) {
-  console.error('❌ Errore caricamento RAG:', err);
-}
-
-function ragRetrieve(queryEmbedding, topK = 3) {
-  function cosine(a, b) {
-    let dot = 0, na = 0, nb = 0;
-    for (let i = 0; i < a.length; i++) {
-      dot += a[i] * b[i];
-      na += a[i] * a[i];
-      nb += b[i] * b[i];
-    }
-    return dot / (Math.sqrt(na) * Math.sqrt(nb));
-  }
-  return RAG_DATA
-    .map(item => ({ ...item, score: cosine(queryEmbedding, item.embedding) }))
-    .sort((a, b) => b.score - a.score)
-    .slice(0, topK);
+if (!RAG_ENDPOINT) {
+    console.error('Missing RAG_ENDPOINT in .env');
+    process.exit(1);
 }
 
 const fastify = Fastify({ logger: true });
 fastify.register(fastifyFormBody);
 fastify.register(fastifyWs);
 
-const SYSTEM_MESSAGE = 'You are a friendly and concise AI voice assistant. Keep your answers short and conversational, like a real phone call. Your voice and personality should be warm and engaging, with a lively and playful tone. If the user wants more, ask "Do you want me to continue?"';
+const BASE_SYSTEM_MESSAGE = `
+You are a friendly and concise AI voice assistant.
+Your tone is warm, engaging, playful, and natural.
+Keep all replies under 15 seconds unless the user asks for more.
+If the user wants more, ask: "Vuoi che continui?"
+`;
+
 const VOICE = 'alloy';
 const PORT = process.env.PORT || 3000;
-const LOG_EVENT_TYPES = [ 'error', 'response.content.done', 'rate_limits.updated', 'response.done', 'input_audio_buffer.committed', 'input_audio_buffer.speech_stopped', 'input_audio_buffer.speech_started', 'session.created' ];
 
-fastify.get('/', async (req, reply) => {
-    reply.send({ message: '🟢 Server Twilio/OpenAI attivo!' });
-});
+fastify.get('/', async () => ({ message: "🟢 Server Twilio + OpenAI + External RAG attivo!" }));
 
 fastify.all('/incoming-call', async (req, reply) => {
-    const twimlResponse = `<?xml version="1.0" encoding="UTF-8"?>
+    reply.type('text/xml').send(`
         <Response>
-            <Say>Connettendo con l'assistente A.I.</Say>
+            <Say>Sto connettendo l'assistente A.I.</Say>
             <Pause length="1"/>
             <Say>Puoi iniziare a parlare!</Say>
             <Connect>
                 <Stream url="wss://${req.headers.host}/media-stream" />
             </Connect>
-        </Response>`;
-    reply.type('text/xml').send(twimlResponse);
+        </Response>
+    `);
 });
 
-fastify.register(async (fastify) => {
+fastify.register(async () => {
     fastify.get('/media-stream', { websocket: true }, (conn, req) => {
-        console.log('🎧 Client Twilio connesso');
         let streamSid = null;
         let latestMediaTimestamp = 0;
+        let responseStartTimestampTwilio = null;
         let lastAssistantItem = null;
         let markQueue = [];
-        let responseStartTimestampTwilio = null;
 
-        const openAiWs = new WebSocket('wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-10-01', {
+        let dynamicStyleContext = ""; // 🆕 stile recuperato via RAG
+
+        const openAiWs = new WebSocket("wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-10-01", {
             headers: {
                 Authorization: `Bearer ${OPENAI_API_KEY}`,
-                'OpenAI-Beta': 'realtime=v1'
+                "OpenAI-Beta": "realtime=v1"
             }
         });
 
-        const initializeSession = () => {
-            const sessionUpdate = {
-                type: 'session.update',
+        // ---------------------
+        //  INIT SESSIONE OAI
+        // ---------------------
+        const sendSessionUpdate = () => {
+            const prompt = BASE_SYSTEM_MESSAGE + "\n\n" +
+                (dynamicStyleContext ? `Adatta lo stile seguendo questi esempi:\n${dynamicStyleContext}` : "");
+
+            const update = {
+                type: "session.update",
                 session: {
-                    turn_detection: { type: 'server_vad' },
-                    input_audio_format: 'g711_ulaw',
-                    output_audio_format: 'g711_ulaw',
+                    turn_detection: { type: "server_vad" },
+                    input_audio_format: "g711_ulaw",
+                    output_audio_format: "g711_ulaw",
                     voice: VOICE,
-                    instructions: SYSTEM_MESSAGE,
-                    modalities: ["text", "audio"],
-                    temperature: 0.8
+                    instructions: prompt,
+                    modalities: ["text", "audio"]
                 }
             };
-            try {
-                openAiWs.send(JSON.stringify(sessionUpdate));
-            } catch (err) {
-                console.error('🚨 [SESSION INIT] Failed to send session update:', err);
-            }
+
+            console.log("🔧 [SESSION UPDATE] Nuove instructions inviate a OpenAI");
+            console.log(prompt);
+
+            openAiWs.send(JSON.stringify(update));
         };
 
-        openAiWs.on('open', () => {
-            console.log('🧠 OpenAI WebSocket connection opened');
-            initializeSession();
+        // -------------------
+        //  RAG ESTERNA
+        // -------------------
+        async function callRag(userText) {
+            try {
+                const res = await fetch(RAG_ENDPOINT, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ query: userText })
+                });
+
+                const json = await res.json();
+
+                console.log("📌 [RAG] Conversazioni recuperate:", json.results?.map(r => r.id));
+
+                return json.context ?? "";
+            } catch (err) {
+                console.error("❌ Errore richiesta RAG:", err);
+                return "";
+            }
+        }
+
+        // ---------------------
+        //  EVENTI OPENAI
+        // ---------------------
+        openAiWs.on("open", () => {
+            console.log("🧠 OpenAI WebSocket connection opened");
+            sendSessionUpdate();
         });
 
-        conn.on('message', async (msg) => {
-            try {
-                const data = JSON.parse(msg);
-                if (data.event === 'media' && data.media.text) {
-                    const userText = data.media.text;
+        openAiWs.on("message", (raw) => {
+            const msg = JSON.parse(raw);
 
-                    // crea embedding
-                    const clientOpenAI = new OpenAI({ apiKey: OPENAI_API_KEY });
-                    const emb = await clientOpenAI.embeddings.create({
-                        model: "text-embedding-3-small",
-                        input: userText
-                    });
-                    const queryEmbedding = emb.data[0].embedding;
+            if (msg.type === "response.audio.delta" && msg.delta) {
+                conn.send(JSON.stringify({
+                    event: "media",
+                    streamSid,
+                    media: { payload: msg.delta }
+                }));
 
-                    // RAG retrieval
-                    const matches = ragRetrieve(queryEmbedding, 3);
-                    console.log('📝 RAG: conversazioni recuperate:', matches.map(m => `${m.id} (score: ${m.score.toFixed(2)})`));
-
-                    const contextText = matches.map(m => m.text).join('\n\n---\n\n');
-
-                    // invio session.update con contesto
-                    if (openAiWs.readyState === WebSocket.OPEN) {
-                        openAiWs.send(JSON.stringify({
-                            type: 'session.update',
-                            session: {
-                                instructions: `Sei un assistente telefonico professionale.\nPrendi come riferimento lo stile delle seguenti conversazioni:\n\n${contextText}\n\nOra rispondi allo stesso modo.`
-                            }
-                        }));
-                    }
+                if (!responseStartTimestampTwilio) {
+                    responseStartTimestampTwilio = latestMediaTimestamp;
                 }
-            } catch (err) {
-                console.error('Errore parsing da Twilio o generazione embedding:', err);
+
+                if (msg.item_id) lastAssistantItem = msg.item_id;
+
+                conn.send(JSON.stringify({
+                    event: "mark",
+                    streamSid,
+                    mark: { name: "responsePart" }
+                }));
+                markQueue.push("responsePart");
             }
         });
 
-        conn.on('close', () => {
-            console.log('❌ Twilio WebSocket connection closed');
-            if (openAiWs.readyState === WebSocket.OPEN) openAiWs.close();
+        // -----------------------
+        //  EVENTI DA TWILIO
+        // -----------------------
+        conn.on("message", async (raw) => {
+            const data = JSON.parse(raw);
+
+            switch (data.event) {
+                case "start":
+                    streamSid = data.start.streamSid;
+                    console.log("🚀 Twilio stream avviato:", streamSid);
+                    break;
+
+                case "media":
+                    latestMediaTimestamp = data.media.timestamp;
+
+                    openAiWs.send(JSON.stringify({
+                        type: "input_audio_buffer.append",
+                        audio: data.media.payload
+                    }));
+                    break;
+
+                case "stop":
+                    console.log("⛔ STREAM STOP");
+                    break;
+
+                // ----------------------
+                //  SPEECH DETECTED
+                // ----------------------
+                case "input_audio_buffer.speech_stopped":
+                case "mark":
+                    break;
+
+                default:
+                    break;
+            }
         });
 
-        openAiWs.on('error', (err) => console.error('Errore OpenAI WS:', err));
+        // Quando OpenAI rileva l'inizio di un messaggio utente, chiediamo RAG
+        openAiWs.on("message", async (raw) => {
+            const msg = JSON.parse(raw);
+
+            if (msg.type === "response.text.delta") return;
+
+            if (msg.type === "input_audio_buffer.speech_stopped") {
+                console.log("🎤 Fine frase utente → invio a RAG…");
+
+                // 1. Richiedi testo dell'utente
+                openAiWs.send(JSON.stringify({ type: "input_text_buffer.extract" }));
+            }
+
+            if (msg.type === "input_text_buffer.extracted") {
+                const userText = msg.text;
+                console.log("👤 Testo utente:", userText);
+
+                // 2. Query RAG
+                dynamicStyleContext = await callRag(userText);
+
+                // 3. Aggiorna le instructions
+                sendSessionUpdate();
+            }
+        });
+
+        conn.on("close", () => {
+            console.log("❌ Connessione Twilio chiusa");
+            openAiWs.close();
+        });
     });
 });
 
-fastify.listen({ port: PORT, host: '0.0.0.0' }, (err) => {
-    if (err) {
-        console.error('Errore di avvio:', err);
-        process.exit(1);
-    }
-    console.log(`🚀 Server avviato su http://0.0.0.0:${PORT}`);
+fastify.listen({ port: PORT, host: "0.0.0.0" }, () => {
+    console.log(`🚀 Server attivo su porta ${PORT}`);
 });
