@@ -65,6 +65,10 @@ fastify.register(async () => {
             }
         });
 
+        // === gestione coda messaggi ===
+        let openAiReady = false;
+        let queuedMessages = [];
+
         // ---------------------
         //  INIT SESSIONE OAI
         // ---------------------
@@ -84,10 +88,10 @@ fastify.register(async () => {
                 }
             };
 
-            console.log("🔧 [SESSION UPDATE] Nuove instructions inviate a OpenAI");
+            console.log("📧 [SESSION UPDATE] Nuove instructions inviate a OpenAI");
             console.log(prompt);
 
-            openAiWs.send(JSON.stringify(update));
+            sendToOpenAI(update);
         };
 
         // -------------------
@@ -112,33 +116,37 @@ fastify.register(async () => {
             }
         }
 
+        function sendToOpenAI(message) {
+            const msgStr = JSON.stringify(message);
+            if (openAiReady && openAiWs.readyState === WebSocket.OPEN) {
+                openAiWs.send(msgStr);
+            } else {
+                queuedMessages.push(msgStr);
+                console.log('🟡 OpenAI WS non pronta, messaggio messo in coda');
+            }
+        }
+
         // ---------------------
         //  EVENTI OPENAI
         // ---------------------
 
-      // === gestione coda messaggi ===
-    let openAiReady = false;
-    let queuedMessages = [];
+        openAiWs.on('open', () => {
+            console.log('🧠 OpenAI WebSocket connection opened');
+            openAiReady = true;
+            
+            // Send initial session update
+            sendSessionUpdate();
+            
+            // Flush queued messages
+            queuedMessages.forEach(msg => openAiWs.send(msg));
+            queuedMessages = [];
+        });
 
-    openAiWs.on('open', () => {
-      console.log('🧠 OpenAI WebSocket connection opened');
-      openAiReady = true;
-      queuedMessages.forEach(msg => openAiWs.send(msg));
-      queuedMessages = [];
-    });
-         function sendToOpenAI(message) {
-      const msgStr = JSON.stringify(message);
-      if (openAiReady && openAiWs.readyState === WebSocket.OPEN) {
-        openAiWs.send(msgStr);
-      } else {
-        queuedMessages.push(msgStr);
-        console.log('🟡 OpenAI WS non pronta, messaggio messo in coda');
-      }
-    }
-
-        openAiWs.on("message", (raw) => {
+        // 🔥 SINGLE UNIFIED MESSAGE HANDLER
+        openAiWs.on("message", async (raw) => {
             const msg = JSON.parse(raw);
 
+            // Handle audio streaming
             if (msg.type === "response.audio.delta" && msg.delta) {
                 conn.send(JSON.stringify({
                     event: "media",
@@ -159,6 +167,37 @@ fastify.register(async () => {
                 }));
                 markQueue.push("responsePart");
             }
+
+            // Handle speech detection for RAG
+            if (msg.type === "input_audio_buffer.speech_stopped") {
+                console.log("🎤 Fine frase utente → invio a RAG…");
+                
+                // Request transcript
+                sendToOpenAI({ type: "conversation.item.create", item: { type: "message", role: "user" } });
+            }
+
+            // Handle transcript and call RAG
+            if (msg.type === "conversation.item.created" && msg.item?.role === "user") {
+                const userText = msg.item.content?.[0]?.transcript;
+                
+                if (userText) {
+                    console.log("💤 Testo utente:", userText);
+
+                    // Query RAG
+                    dynamicStyleContext = await callRag(userText);
+
+                    // Update instructions with new context
+                    sendSessionUpdate();
+                }
+            }
+        });
+
+        openAiWs.on("error", (error) => {
+            console.error("❌ OpenAI WebSocket error:", error);
+        });
+
+        openAiWs.on("close", () => {
+            console.log("🔌 OpenAI WebSocket closed");
         });
 
         // -----------------------
@@ -176,50 +215,21 @@ fastify.register(async () => {
                 case "media":
                     latestMediaTimestamp = data.media.timestamp;
 
-                    openAiWs.send(JSON.stringify({
+                    sendToOpenAI({
                         type: "input_audio_buffer.append",
                         audio: data.media.payload
-                    }));
+                    });
                     break;
 
                 case "stop":
                     console.log("⛔ STREAM STOP");
                     break;
 
-                // ----------------------
-                //  SPEECH DETECTED
-                // ----------------------
-                case "input_audio_buffer.speech_stopped":
                 case "mark":
                     break;
 
                 default:
                     break;
-            }
-        });
-
-        // Quando OpenAI rileva l'inizio di un messaggio utente, chiediamo RAG
-        openAiWs.on("message", async (raw) => {
-            const msg = JSON.parse(raw);
-
-            if (msg.type === "response.text.delta") return;
-
-            if (msg.type === "input_audio_buffer.speech_stopped") {
-                console.log("🎤 Fine frase utente → invio a RAG…");
-
-                // 1. Richiedi testo dell'utente
-                openAiWs.send(JSON.stringify({ type: "input_text_buffer.extract" }));
-            }
-
-            if (msg.type === "input_text_buffer.extracted") {
-                const userText = msg.text;
-                console.log("👤 Testo utente:", userText);
-
-                // 2. Query RAG
-                dynamicStyleContext = await callRag(userText);
-
-                // 3. Aggiorna le instructions
-                sendSessionUpdate();
             }
         });
 
@@ -233,4 +243,3 @@ fastify.register(async () => {
 fastify.listen({ port: PORT, host: "0.0.0.0" }, () => {
     console.log(`🚀 Server attivo su porta ${PORT}`);
 });
-
