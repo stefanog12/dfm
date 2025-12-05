@@ -158,16 +158,16 @@ fastify.register(async (fastify) => {
         });
 
         conn.on('message', (msg) => {
-            console.log('📨 [FROM TWILIO] Message received');
+            // console.log('📨 [FROM TWILIO] Message received');
             try {
                 const data = JSON.parse(msg);
-                console.log('[FROM TWILIO] Event:', data.event);
+               // console.log('[FROM TWILIO] Event:', data.event);
                 switch (data.event) {
                     case 'media':
                         latestMediaTimestamp = data.media.timestamp;
-                         console.log(`🎙️ [MEDIA] Timestamp: ${latestMediaTimestamp}`);
+                        // console.log(`🎙️ [MEDIA] Timestamp: ${latestMediaTimestamp}`);
                         if (openAiWs.readyState === WebSocket.OPEN) {
-                            console.log('➡️ Sending audio to OpenAI (buffer.append)');
+                         //   console.log('➡️ Sending audio to OpenAI (buffer.append)');
                             openAiWs.send(JSON.stringify({
                                 type: 'input_audio_buffer.append',
                                 audio: data.media.payload
