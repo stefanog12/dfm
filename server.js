@@ -167,7 +167,7 @@ fastify.register(async (fastify) => {
                         latestMediaTimestamp = data.media.timestamp;
                          console.log(`🎙️ [MEDIA] Timestamp: ${latestMediaTimestamp}`);
                         if (openAiWs.readyState === WebSocket.OPEN) {
-                            console.log(➡️ Sending audio to OpenAI (buffer.append)');
+                            console.log('➡️ Sending audio to OpenAI (buffer.append)');
                             openAiWs.send(JSON.stringify({
                                 type: 'input_audio_buffer.append',
                                 audio: data.media.payload
