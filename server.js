@@ -5,6 +5,7 @@ import fastifyFormBody from '@fastify/formbody';
 import fastifyWs from '@fastify/websocket';
 import OpenAI from 'openai';
 import { searchMemory } from './rag.js';
+import fs from 'fs';
 
 dotenv.config();
 
@@ -18,6 +19,15 @@ if (!OPENAI_API_KEY) {
 
 const openaiClient = new OpenAI({ apiKey: OPENAI_API_KEY });
 
+// 🎙️ Load prerecorded welcome message
+let WELCOME_AUDIO = null;
+try {
+    WELCOME_AUDIO = fs.readFileSync("welcome_message.ulaw");
+    console.log("✅ Welcome message loaded");
+} catch (err) {
+    console.warn("⚠️ Welcome message not found. Generate it with: node generate_welcome.js");
+}
+
 const fastify = Fastify({ logger: true });
 fastify.register(fastifyFormBody);
 fastify.register(fastifyWs);
@@ -27,7 +37,6 @@ const VOICE = 'alloy';
 const PORT = process.env.PORT || 3000;
 
 const LOG_EVENT_TYPES = [ 'error', 'response.content.done', 'rate_limits.updated', 'response.done', 'input_audio_buffer.committed', 'input_audio_buffer.speech_stopped', 'input_audio_buffer.speech_started', 'session.created' ];
-const SHOW_TIMING_MATH = false;
 
 fastify.get('/', async (req, reply) => {
     reply.send({ message: '🟢 Server Twilio/OpenAI + RAG attivo!' });
@@ -36,9 +45,6 @@ fastify.get('/', async (req, reply) => {
 fastify.all('/incoming-call', async (req, reply) => {
     const twimlResponse = `<?xml version="1.0" encoding="UTF-8"?>
         <Response>
-            <Say>Connettendo con l'assistente A.I.</Say>
-            <Pause length="1"/>
-            <Say>Puoi iniziare a parlare!</Say>
             <Connect>
                 <Stream url="wss://${req.headers.host}/media-stream" />
             </Connect>
@@ -54,11 +60,11 @@ fastify.register(async (fastify) => {
         let lastAssistantItem = null;
         let markQueue = [];
         let responseStartTimestampTwilio = null;
+        let welcomeSent = false;
         
         // 🆕 RAG state
         let ragContext = "";
         let hasCalledRag = false;
-        let pendingTranscript = [];
 
         const openAiWs = new WebSocket("wss://api.openai.com/v1/realtime?model=gpt-realtime", {
             headers: {
@@ -66,6 +72,29 @@ fastify.register(async (fastify) => {
                 'OpenAI-Beta': 'realtime=v1'
             }
         });
+
+        // 🎙️ Send prerecorded welcome message
+        const sendWelcomeMessage = () => {
+            if (!WELCOME_AUDIO || !streamSid || welcomeSent) return;
+            
+            console.log('🎤 Sending prerecorded welcome message');
+            
+            // Split audio into chunks (Twilio prefers ~20ms chunks for 8kHz μ-law)
+            const CHUNK_SIZE = 160; // 20ms at 8kHz
+            const base64Audio = WELCOME_AUDIO.toString('base64');
+            
+            // Send the entire audio as base64
+            conn.send(JSON.stringify({
+                event: 'media',
+                streamSid: streamSid,
+                media: {
+                    payload: base64Audio
+                }
+            }));
+            
+            welcomeSent = true;
+            console.log('✅ Welcome message sent');
+        };
 
         // Initialize session with current instructions
         const initializeSession = () => {
@@ -238,6 +267,8 @@ fastify.register(async (fastify) => {
                     case 'start':
                         streamSid = data.start.streamSid;
                         console.log('🚀 Stream started. SID:', streamSid);
+                        // 🎙️ Send welcome message as soon as stream starts
+                        setTimeout(() => sendWelcomeMessage(), 100);
                         break;
                         
                     case 'mark':
@@ -245,7 +276,6 @@ fastify.register(async (fastify) => {
                         break;
                         
                     default:
-                        // console.log('ℹ️ [OTHER EVENT]:', data.event);
                         break;
                 }
             } catch (err) {
