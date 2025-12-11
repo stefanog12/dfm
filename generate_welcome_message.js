@@ -12,9 +12,10 @@ async function generateWelcomeMessage() {
   try {
     const mp3 = await openai.audio.speech.create({
       model: "tts-1-hd",  // HD quality for better voice
-      voice: "alloy",     // Same voice as your realtime
+      voice: "nova",     // Same voice as your realtime
       input: "DFM clima, buongiorno. Sono l'assistente virtuale. Come posso aiutarla?",
-      response_format: "mp3"
+      response_format: "mp3",
+	  speed: 0.85          // ?? Slower: 0.25-1.0 | Faster: 1.0-4.0
     });
 
     const buffer = Buffer.from(await mp3.arrayBuffer());
