@@ -103,7 +103,13 @@ fastify.register(async (fastify) => {
             const sessionUpdate = {
                 type: 'session.update',
                 session: {
-                    turn_detection: { type: 'server_vad' },
+                    turn_detection: {
+                          type: "server_vad",
+                          silence_duration_ms: 500,      // Fermati dopo 0.5 secondi di silenzio
+                          prefix_padding_ms: 150,        // taglia un po' prima
+                          min_speech_duration_ms: 250,   // serve solo un quarto di secondo per attivarsi
+                          threshold: 0.5                 // più sensibile al parlato
+                    },
                     input_audio_format: 'g711_ulaw',
                     output_audio_format: 'g711_ulaw',
                     voice: VOICE,
