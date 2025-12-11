@@ -1,285 +1,208 @@
-import Fastify from 'fastify';
-import WebSocket from 'ws';
-import dotenv from 'dotenv';
-import fastifyFormBody from '@fastify/formbody';
-import fastifyWs from '@fastify/websocket';
-import OpenAI from 'openai';
-import { searchMemory } from './rag.js';
+import Fastify from "fastify";
+import WebSocket from "ws";
+import dotenv from "dotenv";
+import fastifyFormBody from "@fastify/formbody";
+import fastifyWs from "@fastify/websocket";
+import OpenAI from "openai";
+import { searchMemory } from "./rag.js";
 
 dotenv.config();
 
-console.log("Chiave API:", process.env.OPENAI_API_KEY);
-
 const { OPENAI_API_KEY } = process.env;
 if (!OPENAI_API_KEY) {
-    console.error('Missing OpenAI API key. Please set it in the .env file.');
+    console.error("Missing OPENAI_API_KEY");
     process.exit(1);
 }
 
-const openaiClient = new OpenAI({ apiKey: OPENAI_API_KEY });
+const openai = new OpenAI({ apiKey: OPENAI_API_KEY });
 
-const fastify = Fastify({ logger: true });
+// ------------------------------
+// SERVER SETUP
+// ------------------------------
+const fastify = Fastify({ logger: false });
 fastify.register(fastifyFormBody);
 fastify.register(fastifyWs);
 
-const BASE_SYSTEM_MESSAGE = 'You are a friendly and concise AI voice assistant. Keep your answers short and conversational, like a real phone call. Your voice and personality should be warm and engaging, with a lively and playful tone. If interacting in a non-English language, start by using the standard accent or dialect familiar to the user. Prefer sentences under 15 seconds. If the user wants more, ask "Do you want me to continue?"';
-const VOICE = 'alloy';
+const BASE_SYSTEM_MESSAGE = `
+Sei un'assistente telefonica cortese, femminile e molto naturale.
+Fornisci risposte brevi, colloquiali e veloci.
+Non attendere pause lunghe, rispondi non appena ricevi il testo.
+`.trim();
+
+const VOICE = "coral";   // 🔥 voce femminile e calda
 const PORT = process.env.PORT || 3000;
 
-const LOG_EVENT_TYPES = [ 'error', 'response.content.done', 'rate_limits.updated', 'response.done', 'input_audio_buffer.committed', 'input_audio_buffer.speech_stopped', 'input_audio_buffer.speech_started', 'session.created' ];
-const SHOW_TIMING_MATH = false;
 
-fastify.get('/', async (req, reply) => {
-    reply.send({ message: 'ðŸŸ¢ Server Twilio/OpenAI + RAG attivo!' });
-});
-
-fastify.all('/incoming-call', async (req, reply) => {
-    const twimlResponse = `<?xml version="1.0" encoding="UTF-8"?>
+// ------------------------------
+// TWILIO ENDPOINT
+// ------------------------------
+fastify.all("/incoming-call", async (req, reply) => {
+    const twiml = `
         <Response>
-            <Say>Connettendo con l'assistente A.I.</Say>
-            <Pause length="1"/>
-            <Say>Puoi iniziare a parlare!</Say>
+            <Say>Connessione con l'assistente. Puoi parlare.</Say>
             <Connect>
                 <Stream url="wss://${req.headers.host}/media-stream" />
             </Connect>
-        </Response>`;
-    reply.type('text/xml').send(twimlResponse);
+        </Response>
+    `;
+    reply.type("text/xml").send(twiml);
 });
 
-fastify.register(async (fastify) => {
-    fastify.get('/media-stream', { websocket: true }, (conn, req) => {
-        console.log('ðŸŽ§ Client Twilio connesso');
-        let streamSid = null;
-        let latestMediaTimestamp = 0;
-        let lastAssistantItem = null;
-        let markQueue = [];
-        let responseStartTimestampTwilio = null;
-        
-        // ðŸ†• RAG state
-        let ragContext = "";
-        let hasCalledRag = false;
-        let pendingTranscript = [];
 
-        const openAiWs = new WebSocket("wss://api.openai.com/v1/realtime?model=gpt-realtime", {
+// ------------------------------------------------------------
+// 🔥 VERSIONE ULTRA FAST — NO BLOCK / NO WAIT
+// ------------------------------------------------------------
+fastify.get("/media-stream", { websocket: true }, (conn, req) => {
+    console.log("☎️ Client Twilio connesso");
+
+    let streamSid = null;
+
+    // ------------------------------
+    //  OPENAI REALTIME WS
+    // ------------------------------
+    const openAiWs = new WebSocket(
+        "wss://api.openai.com/v1/realtime?model=gpt-realtime",
+        {
             headers: {
                 Authorization: `Bearer ${OPENAI_API_KEY}`,
-                'OpenAI-Beta': 'realtime=v1'
-            }
-        });
+                "OpenAI-Beta": "realtime=v1",
+            },
+        }
+    );
 
-        // Initialize session with current instructions
-        const initializeSession = () => {
-            const instructions = BASE_SYSTEM_MESSAGE + (ragContext ? `\n\nðŸŽ¯ Adatta il tuo stile seguendo questi esempi di conversazioni passate:\n${ragContext}` : "");
-            
-            const sessionUpdate = {
-                type: 'session.update',
+    // BUFFER audio da Twilio → OpenAI
+    openAiWs.on("open", () => {
+        console.log("🧠 OpenAI realtime connesso");
+
+        openAiWs.send(
+            JSON.stringify({
+                type: "session.update",
                 session: {
-                    turn_detection: { type: 'server_vad' },
-                    input_audio_format: 'g711_ulaw',
-                    output_audio_format: 'g711_ulaw',
                     voice: VOICE,
-                    instructions: instructions,
+                    input_audio_format: "g711_ulaw",
+                    output_audio_format: "g711_ulaw",
+                    turn_detection: { type: "server_vad" },
                     modalities: ["text", "audio"],
-                    temperature: 0.8,
-                    input_audio_transcription: {
-                        model: "whisper-1"
-                    }
-                }
-            };
+                    instructions: BASE_SYSTEM_MESSAGE,
+                    temperature: 0.6,
+                },
+            })
+        );
+    });
 
-            console.log('ðŸ’‰ [SESSION INIT] Sending session update');
-            if (ragContext) {
-                console.log('ðŸ“š [RAG CONTEXT] Instructions include RAG context');
-            }
-            
-            try {
-                openAiWs.send(JSON.stringify(sessionUpdate));
-            } catch (err) {
-                console.error('ðŸš¨ [SESSION INIT] Failed to send session update:', err);
-            }
-        };
+    // ------------------------------
+    //  STREAM AUDIO DA OPENAI → TWILIO
+    // ------------------------------
+    openAiWs.on("message", (raw) => {
+        const msg = JSON.parse(raw);
 
-        // ðŸ†• Generate embedding and search similar conversations
-        async function callRagOnFirstQuery(userText) {
-            try {
-                console.log('ðŸ” [RAG] Generating embedding for user query:', userText);
-                
-                const embeddingResponse = await openaiClient.embeddings.create({
-                    model: "text-embedding-3-small",
-                    input: userText
-                });
-
-                const queryEmbedding = embeddingResponse.data[0].embedding;
-                console.log('âœ… [RAG] Embedding generated');
-
-                // Search similar conversations
-                const results = await searchMemory(queryEmbedding, 3);
-                
-                console.log('ðŸ“Š [RAG] Top 3 similar conversations:');
-                results.forEach((r, idx) => {
-                    console.log(`   ${idx + 1}. ${r.id} (score: ${r.score.toFixed(4)})`);
-                    console.log(`      Preview: ${r.text.substring(0, 100)}...`);
-                });
-
-                // Format context from top results
-                ragContext = results.map((r, idx) => 
-                    `Esempio ${idx + 1} (${r.id}):\n${r.text}`
-                ).join('\n\n');
-
-                console.log('âœ¨ [RAG] Context updated, triggering session update');
-                
-                // Update session with new context
-                initializeSession();
-                
-                hasCalledRag = true;
-                
-            } catch (err) {
-                console.error('âŒ [RAG] Error:', err);
-            }
+        if (msg.type === "response.audio.delta") {
+            conn.send(
+                JSON.stringify({
+                    event: "media",
+                    streamSid,
+                    media: { payload: msg.delta },
+                })
+            );
         }
 
-        const handleSpeechStartedEvent = () => {
-            console.log('ðŸ”Š Speech started detected from OpenAI');
-            if (markQueue.length > 0 && responseStartTimestampTwilio != null) {
-                const elapsedTime = latestMediaTimestamp - responseStartTimestampTwilio;
-                console.log(`â±ï¸ Truncating last assistant item at ${elapsedTime} ms`);
-                if (lastAssistantItem) {
-                    openAiWs.send(JSON.stringify({
-                        type: 'conversation.item.truncate',
-                        item_id: lastAssistantItem,
-                        content_index: 0,
-                        audio_end_ms: elapsedTime
-                    }));
-                }
-                conn.send(JSON.stringify({ event: 'clear', streamSid }));
-                markQueue = [];
-                lastAssistantItem = null;
-                responseStartTimestampTwilio = null;
-            }
-        };
-
-        const sendMark = () => {
-            if (streamSid) {
-                conn.send(JSON.stringify({
-                    event: 'mark',
-                    streamSid,
-                    mark: { name: 'responsePart' }
-                }));
-                markQueue.push('responsePart');
-            }
-        };
-
-        openAiWs.on('open', () => {
-            console.log('ðŸ§  OpenAI WebSocket connection opened (readyState:', openAiWs.readyState, ')');
-            initializeSession();
-        });
-
-        openAiWs.on('message', (data) => {
-            try {
-                const msg = JSON.parse(data);
-                
-                if (LOG_EVENT_TYPES.includes(msg.type)) {
-                    console.log(`[OpenAI EVENT] ${msg.type}`);
-                }
-
-                // Handle audio streaming
-                if (msg.type === 'response.audio.delta' && msg.delta) {
-                    conn.send(JSON.stringify({
-                        event: 'media',
-                        streamSid,
-                        media: { payload: msg.delta }
-                    }));
-
-                    if (!responseStartTimestampTwilio) {
-                        responseStartTimestampTwilio = latestMediaTimestamp;
-                    }
-
-                    if (msg.item_id) lastAssistantItem = msg.item_id;
-
-                    sendMark();
-                }
-
-                // ðŸ†• Capture user speech for RAG (first time only)
-                if (msg.type === 'conversation.item.input_audio_transcription.completed' && !hasCalledRag) {
-                    const userText = msg.transcript;
-                    if (userText && userText.trim().length > 0) {
-                        console.log('ðŸ’¬ [FIRST USER MESSAGE]:', userText);
-                        
-                        // 1️⃣ Subito dopo la trascrizione → CHIUDI IL BUFFER AUDIO
-                        openAiWs.send(JSON.stringify({
-                              type: "input_audio_buffer.commit"
-                         }));
-                        
-                         // 2️⃣ Poi lancia la RAG
-                        callRagOnFirstQuery(userText);
-                    }
-                }
-
-                // Handle speech interruption
-                if (msg.type === 'input_audio_buffer.speech_started') {
-                    handleSpeechStartedEvent();
-                }
-                
-            } catch (err) {
-                console.error('Errore parsing da OpenAI:', err);
-            }
-        });
-
-        conn.on('message', (msg) => {
-            try {
-                const data = JSON.parse(msg);
-                
-                switch (data.event) {
-                    case 'media':
-                        latestMediaTimestamp = data.media.timestamp;
-                        if (openAiWs.readyState === WebSocket.OPEN) {
-                            openAiWs.send(JSON.stringify({
-                                type: 'input_audio_buffer.append',
-                                audio: data.media.payload
-                            }));
-                        } else {
-                            console.warn('âš ï¸ OpenAI WebSocket not open, cannot send audio');
-                        }
-                        break;
-                        
-                    case 'start':
-                        streamSid = data.start.streamSid;
-                        console.log('ðŸš€ Stream started. SID:', streamSid);
-                        break;
-                        
-                    case 'mark':
-                        if (markQueue.length > 0) markQueue.shift();
-                        break;
-                        
-                    default:
-                        // console.log('â„¹ï¸ [OTHER EVENT]:', data.event);
-                        break;
-                }
-            } catch (err) {
-                console.error('Errore parsing da Twilio:', err);
-            }
-        });
-
-        conn.on('close', () => {
-            console.log('âŒ Twilio WebSocket connection closed');
-            if (openAiWs.readyState === WebSocket.OPEN) {
-                console.log('ðŸ”’ Closing OpenAI WebSocket as well');
-                openAiWs.close();
-            } else {
-                console.log('âœ… OpenAI WebSocket already closed');
-            }
-        });
-
-        openAiWs.on('error', (err) => {
-            console.error('Errore OpenAI WS:', err);
-        });
+        // 🔍 RAG — NON blocca la risposta. parte fuori banda.
+        if (
+            msg.type === "conversation.item.input_audio_transcription.completed"
+        ) {
+            const text = msg.transcript?.trim();
+            if (text) triggerRAG(text);
+        }
     });
+
+    openAiWs.on("error", (e) =>
+        console.error("Errore WebSocket OpenAI:", e.message)
+    );
+
+    // ------------------------------
+    // TWILIO → OPENAI
+    // ------------------------------
+    conn.on("message", (data) => {
+        const msg = JSON.parse(data);
+
+        switch (msg.event) {
+            case "start":
+                streamSid = msg.start.streamSid;
+                console.log("▶️ Stream SID:", streamSid);
+                break;
+
+            case "media":
+                if (openAiWs.readyState === WebSocket.OPEN) {
+                    openAiWs.send(
+                        JSON.stringify({
+                            type: "input_audio_buffer.append",
+                            audio: msg.media.payload,
+                        })
+                    );
+                }
+                break;
+        }
+    });
+
+    conn.on("close", () => {
+        console.log("❌ Twilio WS closed");
+        if (openAiWs.readyState === WebSocket.OPEN) openAiWs.close();
+    });
+
+    // ------------------------------------------------------------
+    // 🔥 RAG SUPER VELOCE — NON BLOCCA MAI LA RISPOSTA
+    // ------------------------------------------------------------
+    async function triggerRAG(userText) {
+        try {
+            console.log("🎯 RAG ricerca per:", userText);
+
+            // 1) embedding super veloce
+            const emb = await openai.embeddings.create({
+                model: "text-embedding-3-small",
+                input: userText,
+            });
+
+            const vector = emb.data[0].embedding;
+
+            // 2) top3 immediatamente
+            const results = await searchMemory(vector, 3);
+
+            if (!results.length) return;
+
+            const context =
+                results
+                    .map(
+                        (r, i) =>
+                            `Esempio ${i + 1}:\n${r.text.substring(0, 400)}`
+                    )
+                    .join("\n\n") + "\n\n";
+
+            console.log("📚 Context RAG pronto (no delay).");
+
+            // 3) aggiornamento leggero (NO session.update pesante!)
+            openAiWs.send(
+                JSON.stringify({
+                    type: "conversation.item.create",
+                    item: {
+                        type: "message",
+                        role: "system",
+                        content: [
+                            {
+                                type: "input_text",
+                                text: `Tieni conto di questo stile:\n${context}`,
+                            },
+                        ],
+                    },
+                })
+            );
+        } catch (err) {
+            console.error("Errore RAG:", err);
+        }
+    }
 });
 
-fastify.listen({ port: PORT, host: '0.0.0.0' }, (err) => {
-    if (err) {
-        console.error('Errore di avvio:', err);
-        process.exit(1);
-    }
-    console.log(`ðŸš€ Server avviato su http://0.0.0.0:${PORT}`);
+
+// ------------------------------
+fastify.listen({ port: PORT, host: "0.0.0.0" }, () => {
+    console.log("🚀 Server realtime attivo su porta", PORT);
 });
