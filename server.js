@@ -204,6 +204,13 @@ fastify.register(async (fastify) => {
                     const userText = msg.transcript;
                     if (userText && userText.trim().length > 0) {
                         console.log('ðŸ’¬ [FIRST USER MESSAGE]:', userText);
+                        
+                        // 1️⃣ Subito dopo la trascrizione → CHIUDI IL BUFFER AUDIO
+                        openAiWs.send(JSON.stringify({
+                              type: "input_audio_buffer.commit"
+                         }));
+                        
+                         // 2️⃣ Poi lancia la RAG
                         callRagOnFirstQuery(userText);
                     }
                 }
