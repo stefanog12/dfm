@@ -18,12 +18,21 @@ if (!OPENAI_API_KEY) {
 
 const openaiClient = new OpenAI({ apiKey: OPENAI_API_KEY });
 
+// ðŸŽ™ï¸ Load prerecorded welcome message
+let WELCOME_AUDIO = null;
+try {
+    WELCOME_AUDIO = fs.readFileSync("welcome_message.ulaw");
+    console.log("âœ… Welcome message loaded");
+} catch (err) {
+    console.warn("âš ï¸ Welcome message not found. Generate it with: node generate_welcome.js");
+}
+
 const fastify = Fastify({ logger: true });
 fastify.register(fastifyFormBody);
 fastify.register(fastifyWs);
 
 const BASE_SYSTEM_MESSAGE = 'You are a friendly and concise AI voice assistant. Keep your answers short and conversational, like a real phone call. Your voice and personality should be warm and engaging, with a lively and playful tone. If interacting in a non-English language, start by using the standard accent or dialect familiar to the user. Prefer sentences under 15 seconds. If the user wants more, ask "Do you want me to continue?"';
-const VOICE = 'alloy';
+const VOICE = 'coral';
 const PORT = process.env.PORT || 3000;
 
 const LOG_EVENT_TYPES = [ 'error', 'response.content.done', 'rate_limits.updated', 'response.done', 'input_audio_buffer.committed', 'input_audio_buffer.speech_stopped', 'input_audio_buffer.speech_started', 'session.created' ];
@@ -36,9 +45,6 @@ fastify.get('/', async (req, reply) => {
 fastify.all('/incoming-call', async (req, reply) => {
     const twimlResponse = `<?xml version="1.0" encoding="UTF-8"?>
         <Response>
-            <Say>Connettendo con l'assistente A.I.</Say>
-            <Pause length="1"/>
-            <Say>Puoi iniziare a parlare!</Say>
             <Connect>
                 <Stream url="wss://${req.headers.host}/media-stream" />
             </Connect>
@@ -67,6 +73,29 @@ fastify.register(async (fastify) => {
             }
         });
 
+          // ðŸŽ™ï¸ Send prerecorded welcome message
+        const sendWelcomeMessage = () => {
+            if (!WELCOME_AUDIO || !streamSid || welcomeSent) return;
+            
+            console.log('ðŸŽ¤ Sending prerecorded welcome message');
+            
+            // Split audio into chunks (Twilio prefers ~20ms chunks for 8kHz Î¼-law)
+            const CHUNK_SIZE = 160; // 20ms at 8kHz
+            const base64Audio = WELCOME_AUDIO.toString('base64');
+            
+            // Send the entire audio as base64
+            conn.send(JSON.stringify({
+                event: 'media',
+                streamSid: streamSid,
+                media: {
+                    payload: base64Audio
+                }
+            }));
+            
+            welcomeSent = true;
+            console.log('âœ… Welcome message sent');
+        };
+        
         // Initialize session with current instructions
         const initializeSession = () => {
             const instructions = BASE_SYSTEM_MESSAGE + (ragContext ? `\n\nðŸŽ¯ Adatta il tuo stile seguendo questi esempi di conversazioni passate:\n${ragContext}` : "");
@@ -80,7 +109,7 @@ fastify.register(async (fastify) => {
                     voice: VOICE,
                     instructions: instructions,
                     modalities: ["text", "audio"],
-                    temperature: 0.8,
+                    temperature: 1.0,
                     input_audio_transcription: {
                         model: "whisper-1"
                     }
