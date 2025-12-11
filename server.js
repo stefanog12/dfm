@@ -19,6 +19,16 @@ if (!OPENAI_API_KEY) {
 
 const openaiClient = new OpenAI({ apiKey: OPENAI_API_KEY });
 
+// 📝 Load prompts from external file
+let PROMPTS = null;
+try {
+    PROMPTS = JSON.parse(fs.readFileSync("prompts.json", "utf8"));
+    console.log("✅ Prompts loaded from prompts.json");
+} catch (err) {
+    console.error("❌ Failed to load prompts.json:", err);
+    process.exit(1);
+}
+
 // 🎙️ Load prerecorded welcome message
 let WELCOME_AUDIO = null;
 try {
@@ -32,7 +42,7 @@ const fastify = Fastify({ logger: true });
 fastify.register(fastifyFormBody);
 fastify.register(fastifyWs);
 
-const BASE_SYSTEM_MESSAGE = 'You are a friendly and concise AI voice assistant. Keep your answers short and conversational, like a real phone call. Your voice and personality should be warm and engaging, with a lively and playful tone. If interacting in a non-English language, start by using the standard accent or dialect familiar to the user. Prefer sentences under 15 seconds. If the user wants more, ask "Do you want me to continue?"';
+const BASE_SYSTEM_MESSAGE = PROMPTS.base_message;
 const VOICE = 'nova';
 const PORT = process.env.PORT || 3000;
 
@@ -209,6 +219,11 @@ fastify.register(async (fastify) => {
                 
                 if (LOG_EVENT_TYPES.includes(msg.type)) {
                     console.log(`[OpenAI EVENT] ${msg.type}`);
+                }
+
+                // 🚨 Log detailed errors
+                if (msg.type === 'error') {
+                    console.error('❌ [OpenAI ERROR]:', JSON.stringify(msg, null, 2));
                 }
 
                 // Handle audio streaming
