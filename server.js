@@ -60,7 +60,6 @@ fastify.register(async (fastify) => {
         let lastAssistantItem = null;
         let markQueue = [];
         let responseStartTimestampTwilio = null;
-        let welcomeSent = false;
         
         // 🆕 RAG state
         let ragContext = "";
@@ -206,6 +205,20 @@ fastify.register(async (fastify) => {
         openAiWs.on('open', () => {
             console.log('🧠 OpenAI WebSocket connection opened (readyState:', openAiWs.readyState, ')');
             initializeSession();
+            
+            // 🎤 Send welcome message via OpenAI (so VAD doesn't get confused)
+            setTimeout(() => {
+                if (openAiWs.readyState === WebSocket.OPEN) {
+                    console.log('📢 Sending welcome message via OpenAI');
+                    openAiWs.send(JSON.stringify({
+                        type: 'response.create',
+                        response: {
+                            modalities: ['audio'],
+                            instructions: 'Say: "DFM clima, buongiorno. Sono l\'assistente virtuale. Come posso aiutarla?"'
+                        }
+                    }));
+                }
+            }, 500);
         });
 
         openAiWs.on('message', (data) => {
@@ -277,8 +290,6 @@ fastify.register(async (fastify) => {
                     case 'start':
                         streamSid = data.start.streamSid;
                         console.log('🚀 Stream started. SID:', streamSid);
-                        // 🎙️ Send welcome message as soon as stream starts
-                        setTimeout(() => sendWelcomeMessage(), 100);
                         break;
                         
                     case 'mark':
