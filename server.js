@@ -137,14 +137,42 @@ fastify.register(async (fastify) => {
                 });
 
                 // Format context from top results
-                ragContext = results.map((r, idx) => 
-                    `Esempio ${idx + 1} (${r.id}):\n${r.text}`
-                ).join('\n\n');
+               // ragContext = results.map((r, idx) => 
+                 //   `Esempio ${idx + 1} (${r.id}):\n${r.text}`
+               // ).join('\n\n');
 
-                console.log('✨ [RAG] Context updated, triggering session update');
+               // console.log('✨ [RAG] Context updated, triggering session update');
                 
                 // Update session with new context
-                initializeSession();
+                // initializeSession();
+
+ // DA CHATGPT
+
+                const shortContext = results.map((r, i) => `Esempio ${i+1} (${r.id}): ${r.text.split('\\n').slice(0,2).join(' ').slice(0,200)}`).join(' || ');
+
+  console.log('✨ [RAG] Short context created:', shortContext);
+
+  // 2) push lightweight context into conversation history
+  sendToOpenAI({
+    type: 'conversation.item.create',
+    item: {
+      role: 'system',
+      content: [{ type: 'output_text', text: `Adatta il tuo stile ai seguenti esempi: ${shortContext}` }]
+    }
+  });
+
+  // 3) request the model to generate a response immediately
+  sendToOpenAI({
+    type: 'response.create',
+    response: {
+      modalities: ['audio','text'],
+      voice: VOICE,
+      temperature: 0.6
+    }
+  });
+
+// FINE DA CHATGPT
+
                 
                 hasCalledRag = true;
                 
