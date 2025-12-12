@@ -76,29 +76,7 @@ fastify.register(async (fastify) => {
             }
         });
 
-        // 🎙️ Send prerecorded welcome message
-        const sendWelcomeMessage = () => {
-            if (!WELCOME_AUDIO || !streamSid || welcomeSent) return;
-            
-            console.log('🎤 Sending prerecorded welcome message');
-            
-            // Split audio into chunks (Twilio prefers ~20ms chunks for 8kHz μ-law)
-            const CHUNK_SIZE = 160; // 20ms at 8kHz
-            const base64Audio = WELCOME_AUDIO.toString('base64');
-            
-            // Send the entire audio as base64
-            conn.send(JSON.stringify({
-                event: 'media',
-                streamSid: streamSid,
-                media: {
-                    payload: base64Audio
-                }
-            }));
-            
-            welcomeSent = true;
-            console.log('✅ Welcome message sent');
-        };
-
+        
         // Initialize session with current instructions
         const initializeSession = () => {
             const instructions = BASE_SYSTEM_MESSAGE + (ragContext ? `\n\n🎯 Adatta il tuo stile seguendo questi esempi di conversazioni passate:\n${ragContext}` : "");
@@ -209,21 +187,7 @@ fastify.register(async (fastify) => {
         openAiWs.on('open', () => {
             console.log('🧠 OpenAI WebSocket connection opened (readyState:', openAiWs.readyState, ')');
             initializeSession();
-            
-            // 🎤 Send welcome message via OpenAI (so VAD doesn't get confused)
-            setTimeout(() => {
-                if (openAiWs.readyState === WebSocket.OPEN) {
-                    console.log('📢 Sending welcome message via OpenAI');
-                    openAiWs.send(JSON.stringify({
-                        type: 'response.create',
-                        response: {
-                            modalities: ['text', 'audio'],
-                            instructions: 'Say: "DFM clima, buongiorno. Sono l\'assistente virtuale. Come posso aiutarla?"'
-                        }
-                    }));
-                }
-            }, 500);
-        });
+           });
 
         openAiWs.on('message', (data) => {
             try {
