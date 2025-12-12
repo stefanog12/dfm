@@ -213,7 +213,7 @@ fastify.register(async (fastify) => {
                     openAiWs.send(JSON.stringify({
                         type: 'response.create',
                         response: {
-                            modalities: ['audio'],
+                            modalities: ['text', 'audio'],
                             instructions: 'Say: "DFM clima, buongiorno. Sono l\'assistente virtuale. Come posso aiutarla?"'
                         }
                     }));
