@@ -64,6 +64,7 @@ fastify.register(async (fastify) => {
         // 🆕 RAG state
         let ragContext = "";
         let hasCalledRag = false;
+        let pendingRagUpdate = false;
 
         const openAiWs = new WebSocket("wss://api.openai.com/v1/realtime?model=gpt-realtime", {
             headers: {
@@ -104,9 +105,9 @@ fastify.register(async (fastify) => {
                 session: {
                     turn_detection: { 
                         type: 'server_vad',
-                        threshold: 0.7,           // 🎚️ Sensibilità: 0.0-1.0 (default 0.5)
-                        prefix_padding_ms: 300,   // Audio prima del parlato
-                        silence_duration_ms: 200  // ⏱️ Silenzio per considerare fine frase (default 500ms)
+                        threshold: 0.7,           // 🎚️ AUMENTATO: meno sensibile al rumore
+                        prefix_padding_ms: 300,   
+                        silence_duration_ms: 300  // ⏱️ 300ms = buon compromesso
                     },
                     input_audio_format: 'g711_ulaw',
                     output_audio_format: 'g711_ulaw',
@@ -159,11 +160,10 @@ fastify.register(async (fastify) => {
                     `Esempio ${idx + 1} (${r.id}):\n${r.text}`
                 ).join('\n\n');
 
-                console.log('✨ [RAG] Context updated, triggering session update');
+                console.log('✨ [RAG] Context updated, will update session after current response');
                 
-                // Update session with new context
-                initializeSession();
-                
+                // Don't update immediately - wait for current response to finish
+                pendingRagUpdate = true;
                 hasCalledRag = true;
                 
             } catch (err) {
@@ -259,6 +259,13 @@ fastify.register(async (fastify) => {
                 
                 if (msg.type === 'response.audio.done') {
                     console.log('✅ [AUDIO DONE] Full audio sent');
+                    
+                    // 🆕 Apply pending RAG update after response completes
+                    if (pendingRagUpdate) {
+                        console.log('🔄 [RAG] Applying deferred session update');
+                        initializeSession();
+                        pendingRagUpdate = false;
+                    }
                 }
 
                 // 🆕 Capture user speech for RAG (first time only)
