@@ -53,6 +53,7 @@ fastify.all('/incoming-call', async (req, reply) => {
             </Connect>
         </Response>`;
     reply.type('text/xml').send(twimlResponse);
+    welcomeSent = true;
 });
 
 fastify.register(async (fastify) => {
