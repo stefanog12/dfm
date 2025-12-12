@@ -38,6 +38,10 @@ const PORT = process.env.PORT || 3000;
 
 const LOG_EVENT_TYPES = [ 'error', 'response.content.done', 'rate_limits.updated', 'response.done', 'input_audio_buffer.committed', 'input_audio_buffer.speech_stopped', 'input_audio_buffer.speech_started', 'session.created' ];
 
+// CHATGPT per evitare il continuo speech started
+let lastSpeechStart = 0;
+const SPEECH_DEBOUNCE_MS = 1500; // 1.5s: il tempo entro cui IGNORARE ripetizioni
+
 fastify.get('/', async (req, reply) => {
     reply.send({ message: '🟢 Server Twilio/OpenAI + RAG attivo!' });
 });
@@ -154,6 +158,16 @@ fastify.register(async (fastify) => {
         }
 
         const handleSpeechStartedEvent = () => {
+            // CHATGPT per evitare che parta con rumeri entri 1.5 sec
+                const now = Date.now();
+                // ⛔ Evita chiamate multiple troppo ravvicinate
+                if (now - lastSpeechStart < SPEECH_DEBOUNCE_MS) {
+                    console.log("⏳ Ignorato speech_started (debounce)");
+                    return;
+                } 
+                lastSpeechStart = now; // aggiorna ultimo timestamp valido
+
+            
             console.log('🔊 Speech started detected from OpenAI');
             if (markQueue.length > 0 && responseStartTimestampTwilio != null) {
                 const elapsedTime = latestMediaTimestamp - responseStartTimestampTwilio;
