@@ -45,6 +45,9 @@ fastify.get('/', async (req, reply) => {
 fastify.all('/incoming-call', async (req, reply) => {
     const twimlResponse = `<?xml version="1.0" encoding="UTF-8"?>
         <Response>
+            <Say>Connettendo con l'assistente A.I.</Say>
+            <Pause length="1"/>
+            <Say>Puoi iniziare a parlare!</Say>
             <Connect>
                 <Stream url="wss://${req.headers.host}/media-stream" />
             </Connect>
