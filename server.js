@@ -38,10 +38,6 @@ const PORT = process.env.PORT || 3000;
 
 const LOG_EVENT_TYPES = [ 'error', 'response.content.done', 'rate_limits.updated', 'response.done', 'input_audio_buffer.committed', 'input_audio_buffer.speech_stopped', 'input_audio_buffer.speech_started', 'session.created' ];
 
-// CHATGPT per evitare il continuo speech started
-let lastSpeechStart = 0;
-const SPEECH_DEBOUNCE_MS = 1500; // 1.5s: il tempo entro cui IGNORARE ripetizioni
-
 fastify.get('/', async (req, reply) => {
     reply.send({ message: '🟢 Server Twilio/OpenAI + RAG attivo!' });
 });
@@ -49,15 +45,11 @@ fastify.get('/', async (req, reply) => {
 fastify.all('/incoming-call', async (req, reply) => {
     const twimlResponse = `<?xml version="1.0" encoding="UTF-8"?>
         <Response>
-            <Say>Connettendo con l'assistente A.I.</Say>
-            <Pause length="1"/>
-            <Say>Puoi iniziare a parlare!</Say>
             <Connect>
                 <Stream url="wss://${req.headers.host}/media-stream" />
             </Connect>
         </Response>`;
     reply.type('text/xml').send(twimlResponse);
-    welcomeSent = true;
 });
 
 fastify.register(async (fastify) => {
@@ -80,7 +72,29 @@ fastify.register(async (fastify) => {
             }
         });
 
-        
+        // 🎙️ Send prerecorded welcome message
+        const sendWelcomeMessage = () => {
+            if (!WELCOME_AUDIO || !streamSid || welcomeSent) return;
+            
+            console.log('🎤 Sending prerecorded welcome message');
+            
+            // Split audio into chunks (Twilio prefers ~20ms chunks for 8kHz μ-law)
+            const CHUNK_SIZE = 160; // 20ms at 8kHz
+            const base64Audio = WELCOME_AUDIO.toString('base64');
+            
+            // Send the entire audio as base64
+            conn.send(JSON.stringify({
+                event: 'media',
+                streamSid: streamSid,
+                media: {
+                    payload: base64Audio
+                }
+            }));
+            
+            welcomeSent = true;
+            console.log('✅ Welcome message sent');
+        };
+
         // Initialize session with current instructions
         const initializeSession = () => {
             const instructions = BASE_SYSTEM_MESSAGE + (ragContext ? `\n\n🎯 Adatta il tuo stile seguendo questi esempi di conversazioni passate:\n${ragContext}` : "");
@@ -141,16 +155,16 @@ fastify.register(async (fastify) => {
                 });
 
                 // Format context from top results
-               ragContext = results.map((r, idx) => 
-                   `Esempio ${idx + 1} (${r.id}):\n${r.text}`
-                 ).join('\n\n');
+                ragContext = results.map((r, idx) => 
+                    `Esempio ${idx + 1} (${r.id}):\n${r.text}`
+                ).join('\n\n');
 
-               console.log('✨ [RAG] Context updated, triggering session update');
+                console.log('✨ [RAG] Context updated, triggering session update');
                 
                 // Update session with new context
                 initializeSession();
-
-               hasCalledRag = true;
+                
+                hasCalledRag = true;
                 
             } catch (err) {
                 console.error('❌ [RAG] Error:', err);
@@ -158,16 +172,6 @@ fastify.register(async (fastify) => {
         }
 
         const handleSpeechStartedEvent = () => {
-            // CHATGPT per evitare che parta con rumeri entri 1.5 sec
-                const now = Date.now();
-                // ⛔ Evita chiamate multiple troppo ravvicinate
-                if (now - lastSpeechStart < SPEECH_DEBOUNCE_MS) {
-                    console.log("⏳ Ignorato speech_started (debounce)");
-                    return;
-                } 
-                lastSpeechStart = now; // aggiorna ultimo timestamp valido
-
-            
             console.log('🔊 Speech started detected from OpenAI');
             if (markQueue.length > 0 && responseStartTimestampTwilio != null) {
                 const elapsedTime = latestMediaTimestamp - responseStartTimestampTwilio;
@@ -201,16 +205,29 @@ fastify.register(async (fastify) => {
         openAiWs.on('open', () => {
             console.log('🧠 OpenAI WebSocket connection opened (readyState:', openAiWs.readyState, ')');
             initializeSession();
-           });
+            
+            // 🎤 Send welcome message via OpenAI (so VAD doesn't get confused)
+            setTimeout(() => {
+                if (openAiWs.readyState === WebSocket.OPEN) {
+                    console.log('📢 Sending welcome message via OpenAI');
+                    openAiWs.send(JSON.stringify({
+                        type: 'response.create',
+                        response: {
+                            modalities: ['text', 'audio'],
+                            instructions: 'Say: "DFM clima, buongiorno. Sono l\'assistente virtuale. Come posso aiutarla?"'
+                        }
+                    }));
+                }
+            }, 500);
+        });
 
-        openAiWs.on('message', (data) => {
+        openAiWs.on('message', async (data) => {
             try {
                 const msg = JSON.parse(data);
                 
-                if (LOG_EVENT_TYPES.includes(msg.type)) {
-                    console.log(`[OpenAI EVENT] ${msg.type}`);
-                }
-
+                // 📊 Log ALL events to debug
+                console.log(`[OpenAI EVENT] ${msg.type}`);
+                
                 // 🚨 Log detailed errors
                 if (msg.type === 'error') {
                     console.error('❌ [OpenAI ERROR]:', JSON.stringify(msg, null, 2));
@@ -218,6 +235,7 @@ fastify.register(async (fastify) => {
 
                 // Handle audio streaming
                 if (msg.type === 'response.audio.delta' && msg.delta) {
+                    console.log('🔊 [AUDIO DELTA] Received chunk, sending to Twilio');
                     conn.send(JSON.stringify({
                         event: 'media',
                         streamSid,
@@ -226,11 +244,21 @@ fastify.register(async (fastify) => {
 
                     if (!responseStartTimestampTwilio) {
                         responseStartTimestampTwilio = latestMediaTimestamp;
+                        console.log('⏱️ First audio chunk timestamp:', responseStartTimestampTwilio);
                     }
 
                     if (msg.item_id) lastAssistantItem = msg.item_id;
 
                     sendMark();
+                }
+                
+                // 📝 Log when response starts
+                if (msg.type === 'response.audio_transcript.delta') {
+                    console.log('📝 [TRANSCRIPT]:', msg.delta);
+                }
+                
+                if (msg.type === 'response.audio.done') {
+                    console.log('✅ [AUDIO DONE] Full audio sent');
                 }
 
                 // 🆕 Capture user speech for RAG (first time only)
@@ -238,7 +266,9 @@ fastify.register(async (fastify) => {
                     const userText = msg.transcript;
                     if (userText && userText.trim().length > 0) {
                         console.log('💬 [FIRST USER MESSAGE]:', userText);
-                        callRagOnFirstQuery(userText);
+                        console.log('⏱️ [TIMING] Starting RAG query at:', new Date().toISOString());
+                        await callRagOnFirstQuery(userText);
+                        console.log('⏱️ [TIMING] RAG completed at:', new Date().toISOString());
                     }
                 }
 
