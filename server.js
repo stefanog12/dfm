@@ -78,7 +78,64 @@ fastify.register(async (fastify) => {
         let lastAudioTimestamp = 0;
         const SILENCE_THRESHOLD = 1000; // Se non arriva audio per 1 secondo = silenzio
 
-        const openAiWs = new WebSocket("wss://api.openai.com/v1/realtime?model=gpt-realtime", {
+        // 🆕 Function to send waiting tone (3 beeps) to Twilio
+        const sendWaitingTone = () => {
+            if (!streamSid) return;
+            
+            console.log('🎵 Sending waiting tone (3 beeps)');
+            
+            // Generate simple 3-tone beep pattern in μ-law format
+            // This is a simplified version - in production you'd use pre-recorded audio
+            const beepDuration = 100; // ms per beep
+            const silenceDuration = 100; // ms between beeps
+            const sampleRate = 8000; // 8kHz for μ-law
+            
+            // Simple sine wave beep at 800Hz
+            const generateBeep = () => {
+                const samples = Math.floor((sampleRate * beepDuration) / 1000);
+                const buffer = Buffer.alloc(samples);
+                for (let i = 0; i < samples; i++) {
+                    // Simple sine wave
+                    const t = i / sampleRate;
+                    const value = Math.sin(2 * Math.PI * 800 * t) * 127;
+                    // Convert to μ-law (simplified)
+                    buffer[i] = Math.floor(value + 128);
+                }
+                return buffer.toString('base64');
+            };
+            
+            const silence = () => {
+                const samples = Math.floor((sampleRate * silenceDuration) / 1000);
+                return Buffer.alloc(samples, 0xFF).toString('base64'); // μ-law silence
+            };
+            
+            // Send 3 beeps with silence in between
+            const beep = generateBeep();
+            const gap = silence();
+            
+            conn.send(JSON.stringify({
+                event: 'media',
+                streamSid,
+                media: { payload: beep }
+            }));
+            
+            setTimeout(() => {
+                conn.send(JSON.stringify({
+                    event: 'media',
+                    streamSid,
+                    media: { payload: beep }
+                }));
+            }, beepDuration + silenceDuration);
+            
+            setTimeout(() => {
+                conn.send(JSON.stringify({
+                    event: 'media',
+                    streamSid,
+                    media: { payload: beep }
+                }));
+            }, (beepDuration + silenceDuration) * 2);
+        };
+
             headers: {
                 Authorization: `Bearer ${OPENAI_API_KEY}`,
                 'OpenAI-Beta': 'realtime=v1'
@@ -94,9 +151,9 @@ fastify.register(async (fastify) => {
                 session: {
                     turn_detection: { 
                         type: 'server_vad',
-                        threshold: 0.8,           // 🔴 AUMENTATO: era 0.7, ora 0.8 (meno sensibile)
-                        prefix_padding_ms: 200,   // 🔴 RIDOTTO: era 300ms (meno padding iniziale)
-                        silence_duration_ms: 500  // 🔴 AUMENTATO: era 300ms, ora 500ms (attende più silenzio)
+                        threshold: 0.9,           // 🔴 MASSIMO: 0.9 per ambiente molto sensibile
+                        prefix_padding_ms: 100,   // 🔴 MINIMO: ridotto per catturare meno pre-audio
+                        silence_duration_ms: 700  // 🔴 AUMENTATO: 700ms di silenzio richiesto
                     },
                     input_audio_format: 'g711_ulaw',
                     output_audio_format: 'g711_ulaw',
@@ -298,6 +355,9 @@ fastify.register(async (fastify) => {
                         console.warn('⚠️ [TIMEOUT] Speech exceeded max duration, forcing commit');
                         isProcessingResponse = true;
                         
+                        // 🎵 Send waiting tone to user
+                        sendWaitingTone();
+                        
                         if (openAiWs.readyState === WebSocket.OPEN) {
                             // First commit the audio buffer
                             openAiWs.send(JSON.stringify({
@@ -328,9 +388,21 @@ fastify.register(async (fastify) => {
                         const duration = Date.now() - speechStartTime;
                         console.log(`🎤 [SPEECH STOPPED] Duration: ${duration}ms, Audio chunks: ${audioChunksReceived}`);
                         
-                        // 🔴 DIAGNOSTICO: Se durata > 10s con pochi chunks = falso positivo
-                        if (duration > 10000 && audioChunksReceived < 50) {
-                            console.warn('⚠️ [VAD WARNING] Long speech with few audio chunks - possible false positive');
+                        // 🔴 PROTEZIONE: Se durata > 10s con pochi chunks = ghost speech
+                        if (duration > 10000 && audioChunksReceived < 100) {
+                            console.warn('⚠️ [VAD WARNING] Ghost speech detected - ignoring and clearing buffer');
+                            
+                            // Clear the buffer to ignore this ghost speech
+                            if (openAiWs.readyState === WebSocket.OPEN) {
+                                openAiWs.send(JSON.stringify({
+                                    type: 'input_audio_buffer.clear'
+                                }));
+                            }
+                            
+                            speechStartTime = null;
+                            audioChunksReceived = 0;
+                            isProcessingResponse = false;
+                            return; // Don't let the natural flow continue
                         }
                         
                         speechStartTime = null;
