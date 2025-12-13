@@ -65,6 +65,11 @@ fastify.register(async (fastify) => {
         let ragContext = "";
         let hasCalledRag = false;
         let pendingRagUpdate = false;
+        
+        // ⏱️ Timeout safety for stuck speech detection
+        let speechStartTime = null;
+        let speechTimeoutTimer = null;
+        const MAX_SPEECH_DURATION = 15000; // 15 secondi massimo
 
         const openAiWs = new WebSocket("wss://api.openai.com/v1/realtime?model=gpt-realtime", {
             headers: {
@@ -105,7 +110,7 @@ fastify.register(async (fastify) => {
                 session: {
                     turn_detection: { 
                         type: 'server_vad',
-                        threshold: 0.7,           // 🎚️ AUMENTATO: meno sensibile al rumore
+                        threshold: 0.75,           // 🎚️ AUMENTATO: meno sensibile al rumore
                         prefix_padding_ms: 300,   
                         silence_duration_ms: 300  // ⏱️ 300ms = buon compromesso
                     },
@@ -281,7 +286,33 @@ fastify.register(async (fastify) => {
 
                 // Handle speech interruption
                 if (msg.type === 'input_audio_buffer.speech_started') {
+                    console.log('🎤 [SPEECH] User started speaking');
+                    speechStartTime = Date.now();
+                    
+                    // Set timeout to force stop if speech goes too long
+                    if (speechTimeoutTimer) clearTimeout(speechTimeoutTimer);
+                    speechTimeoutTimer = setTimeout(() => {
+                        console.warn('⚠️ [TIMEOUT] Speech exceeded max duration, forcing commit');
+                        if (openAiWs.readyState === WebSocket.OPEN) {
+                            openAiWs.send(JSON.stringify({
+                                type: 'input_audio_buffer.commit'
+                            }));
+                        }
+                    }, MAX_SPEECH_DURATION);
+                    
                     handleSpeechStartedEvent();
+                }
+                
+                if (msg.type === 'input_audio_buffer.speech_stopped') {
+                    if (speechTimeoutTimer) {
+                        clearTimeout(speechTimeoutTimer);
+                        speechTimeoutTimer = null;
+                    }
+                    if (speechStartTime) {
+                        const duration = Date.now() - speechStartTime;
+                        console.log(`🎤 [SPEECH] User spoke for ${duration}ms`);
+                        speechStartTime = null;
+                    }
                 }
                 
             } catch (err) {
@@ -325,6 +356,13 @@ fastify.register(async (fastify) => {
 
         conn.on('close', () => {
             console.log('❌ Twilio WebSocket connection closed');
+            
+            // Clean up timeout
+            if (speechTimeoutTimer) {
+                clearTimeout(speechTimeoutTimer);
+                speechTimeoutTimer = null;
+            }
+            
             if (openAiWs.readyState === WebSocket.OPEN) {
                 console.log('🔒 Closing OpenAI WebSocket as well');
                 openAiWs.close();
