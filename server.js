@@ -71,6 +71,7 @@ fastify.register(async (fastify) => {
         let speechStartTime = null;
         let speechTimeoutTimer = null;
         const MAX_SPEECH_DURATION = 8000; // 🔴 RIDOTTO a 8 secondi (era 15)
+        let isProcessingResponse = false; // 🆕 Previeni richieste simultanee
         
         // 🆕 SOLUZIONE 2: Tracciamento audio effettivo per distinguere silenzio da speech
         let audioChunksReceived = 0;
@@ -233,6 +234,7 @@ fastify.register(async (fastify) => {
 
                     if (!responseStartTimestampTwilio) {
                         responseStartTimestampTwilio = latestMediaTimestamp;
+                        isProcessingResponse = false; // Reset quando inizia effettivamente la risposta
                     }
 
                     if (msg.item_id) lastAssistantItem = msg.item_id;
@@ -241,6 +243,13 @@ fastify.register(async (fastify) => {
                 
                 if (msg.type === 'response.audio.done') {
                     console.log('✅ [AUDIO DONE] Full audio sent');
+                    
+                    // Reset stato per la prossima interazione
+                    responseStartTimestampTwilio = null;
+                    lastAssistantItem = null;
+                    markQueue = [];
+                    audioChunksReceived = 0;
+                    isProcessingResponse = false;
                     
                     // 🆕 Apply pending RAG update after response completes
                     if (pendingRagUpdate) {
@@ -276,11 +285,19 @@ fastify.register(async (fastify) => {
                     speechStartTime = Date.now();
                     audioChunksReceived = 0; // Reset counter
                     lastAudioTimestamp = Date.now();
+                    isProcessingResponse = false; // Reset flag quando inizia nuovo speech
                     
                     // Set timeout to force stop if speech goes too long
                     if (speechTimeoutTimer) clearTimeout(speechTimeoutTimer);
                     speechTimeoutTimer = setTimeout(() => {
+                        if (isProcessingResponse) {
+                            console.log('⏭️ [TIMEOUT] Already processing response, skipping');
+                            return;
+                        }
+                        
                         console.warn('⚠️ [TIMEOUT] Speech exceeded max duration, forcing commit');
+                        isProcessingResponse = true;
+                        
                         if (openAiWs.readyState === WebSocket.OPEN) {
                             // First commit the audio buffer
                             openAiWs.send(JSON.stringify({
@@ -289,13 +306,13 @@ fastify.register(async (fastify) => {
                             
                             // 🔴 IMPORTANTE: Dopo il commit, chiedi esplicitamente una risposta
                             setTimeout(() => {
-                                if (openAiWs.readyState === WebSocket.OPEN) {
+                                if (openAiWs.readyState === WebSocket.OPEN && isProcessingResponse) {
                                     console.log('🎯 [TIMEOUT] Requesting response after forced commit');
                                     openAiWs.send(JSON.stringify({
                                         type: 'response.create'
                                     }));
                                 }
-                            }, 100); // Piccolo delay per assicurarsi che il commit sia processato
+                            }, 200); // Aumentato a 200ms per dare tempo al commit
                         }
                     }, MAX_SPEECH_DURATION);
                     
@@ -319,6 +336,7 @@ fastify.register(async (fastify) => {
                         speechStartTime = null;
                         audioChunksReceived = 0;
                     }
+                    // Non resettare isProcessingResponse qui - aspetta che la risposta inizi
                 }
                 
             } catch (err) {
