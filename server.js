@@ -65,6 +65,7 @@ fastify.register(async (fastify) => {
         let ragContext = "";
         let hasCalledRag = false;
         let pendingRagUpdate = false;
+        let lastSessionUpdateTime = 0; // Track when we last updated session
         
         // ⏱️ SOLUZIONE 1: Timeout più aggressivo per speech bloccato
         let speechStartTime = null;
@@ -112,6 +113,8 @@ fastify.register(async (fastify) => {
             if (ragContext) {
                 console.log('📚 [RAG CONTEXT] Instructions include RAG context');
             }
+            
+            lastSessionUpdateTime = Date.now(); // Track update time
             
             try {
                 openAiWs.send(JSON.stringify(sessionUpdate));
@@ -244,6 +247,17 @@ fastify.register(async (fastify) => {
                         console.log('🔄 [RAG] Applying deferred session update');
                         initializeSession();
                         pendingRagUpdate = false;
+                        
+                        // 🔴 IMPORTANTE: Dopo il session update, pulisci il buffer audio
+                        // per evitare che resti in uno stato inconsistente
+                        setTimeout(() => {
+                            if (openAiWs.readyState === WebSocket.OPEN) {
+                                console.log('🧹 [RAG] Clearing audio buffer after session update');
+                                openAiWs.send(JSON.stringify({
+                                    type: 'input_audio_buffer.clear'
+                                }));
+                            }
+                        }, 100);
                     }
                 }
 
@@ -321,6 +335,13 @@ fastify.register(async (fastify) => {
                         latestMediaTimestamp = data.media.timestamp;
                         audioChunksReceived++; // Track audio activity
                         lastAudioTimestamp = Date.now();
+                        
+                        // 🔴 DIAGNOSTICO: Avvisa se ricevi audio subito dopo un session update
+                        if (lastSessionUpdateTime && (Date.now() - lastSessionUpdateTime) < 5000) {
+                            if (audioChunksReceived % 100 === 0) { // Log ogni 100 chunks
+                                console.log(`📊 [AUDIO] Receiving audio after session update (${audioChunksReceived} chunks)`);
+                            }
+                        }
                         
                         if (openAiWs.readyState === WebSocket.OPEN) {
                             openAiWs.send(JSON.stringify({
