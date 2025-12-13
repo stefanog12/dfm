@@ -66,10 +66,15 @@ fastify.register(async (fastify) => {
         let hasCalledRag = false;
         let pendingRagUpdate = false;
         
-        // ⏱️ Timeout safety for stuck speech detection
+        // ⏱️ SOLUZIONE 1: Timeout più aggressivo per speech bloccato
         let speechStartTime = null;
         let speechTimeoutTimer = null;
-        const MAX_SPEECH_DURATION = 15000; // 15 secondi massimo
+        const MAX_SPEECH_DURATION = 8000; // 🔴 RIDOTTO a 8 secondi (era 15)
+        
+        // 🆕 SOLUZIONE 2: Tracciamento audio effettivo per distinguere silenzio da speech
+        let audioChunksReceived = 0;
+        let lastAudioTimestamp = 0;
+        const SILENCE_THRESHOLD = 1000; // Se non arriva audio per 1 secondo = silenzio
 
         const openAiWs = new WebSocket("wss://api.openai.com/v1/realtime?model=gpt-realtime", {
             headers: {
@@ -77,29 +82,6 @@ fastify.register(async (fastify) => {
                 'OpenAI-Beta': 'realtime=v1'
             }
         });
-
-        // 🎙️ Send prerecorded welcome message
-        const sendWelcomeMessage = () => {
-            if (!WELCOME_AUDIO || !streamSid || welcomeSent) return;
-            
-            console.log('🎤 Sending prerecorded welcome message');
-            
-            // Split audio into chunks (Twilio prefers ~20ms chunks for 8kHz μ-law)
-            const CHUNK_SIZE = 160; // 20ms at 8kHz
-            const base64Audio = WELCOME_AUDIO.toString('base64');
-            
-            // Send the entire audio as base64
-            conn.send(JSON.stringify({
-                event: 'media',
-                streamSid: streamSid,
-                media: {
-                    payload: base64Audio
-                }
-            }));
-            
-            welcomeSent = true;
-            console.log('✅ Welcome message sent');
-        };
 
         // Initialize session with current instructions
         const initializeSession = () => {
@@ -110,9 +92,9 @@ fastify.register(async (fastify) => {
                 session: {
                     turn_detection: { 
                         type: 'server_vad',
-                        threshold: 0.85,           // 🎚️ AUMENTATO: meno sensibile al rumore
-                        prefix_padding_ms: 150,   
-                        silence_duration_ms: 600  // ⏱️ 300ms = buon compromesso
+                        threshold: 0.8,           // 🔴 AUMENTATO: era 0.7, ora 0.8 (meno sensibile)
+                        prefix_padding_ms: 200,   // 🔴 RIDOTTO: era 300ms (meno padding iniziale)
+                        silence_duration_ms: 500  // 🔴 AUMENTATO: era 300ms, ora 500ms (attende più silenzio)
                     },
                     input_audio_format: 'g711_ulaw',
                     output_audio_format: 'g711_ulaw',
@@ -126,7 +108,7 @@ fastify.register(async (fastify) => {
                 }
             };
 
-            console.log('💉 [SESSION INIT] Sending session update');
+            console.log('👉 [SESSION INIT] Sending session update with optimized VAD');
             if (ragContext) {
                 console.log('📚 [RAG CONTEXT] Instructions include RAG context');
             }
@@ -211,7 +193,7 @@ fastify.register(async (fastify) => {
             console.log('🧠 OpenAI WebSocket connection opened (readyState:', openAiWs.readyState, ')');
             initializeSession();
             
-            // 🎤 Send welcome message via OpenAI (so VAD doesn't get confused)
+            // 🎤 Send welcome message via OpenAI
             setTimeout(() => {
                 if (openAiWs.readyState === WebSocket.OPEN) {
                     console.log('📢 Sending welcome message via OpenAI');
@@ -240,7 +222,6 @@ fastify.register(async (fastify) => {
 
                 // Handle audio streaming
                 if (msg.type === 'response.audio.delta' && msg.delta) {
-                    console.log('🔊 [AUDIO DELTA] Received chunk, sending to Twilio');
                     conn.send(JSON.stringify({
                         event: 'media',
                         streamSid,
@@ -249,17 +230,10 @@ fastify.register(async (fastify) => {
 
                     if (!responseStartTimestampTwilio) {
                         responseStartTimestampTwilio = latestMediaTimestamp;
-                        console.log('⏱️ First audio chunk timestamp:', responseStartTimestampTwilio);
                     }
 
                     if (msg.item_id) lastAssistantItem = msg.item_id;
-
                     sendMark();
-                }
-                
-                // 📝 Log when response starts
-                if (msg.type === 'response.audio_transcript.delta') {
-                    console.log('📝 [TRANSCRIPT]:', msg.delta);
                 }
                 
                 if (msg.type === 'response.audio.done') {
@@ -278,25 +252,36 @@ fastify.register(async (fastify) => {
                     const userText = msg.transcript;
                     if (userText && userText.trim().length > 0) {
                         console.log('💬 [FIRST USER MESSAGE]:', userText);
-                        console.log('⏱️ [TIMING] Starting RAG query at:', new Date().toISOString());
                         await callRagOnFirstQuery(userText);
-                        console.log('⏱️ [TIMING] RAG completed at:', new Date().toISOString());
                     }
                 }
 
                 // Handle speech interruption
                 if (msg.type === 'input_audio_buffer.speech_started') {
-                    console.log('🎤 [SPEECH] User started speaking');
+                    console.log('🎤 [SPEECH STARTED] User started speaking');
                     speechStartTime = Date.now();
+                    audioChunksReceived = 0; // Reset counter
+                    lastAudioTimestamp = Date.now();
                     
                     // Set timeout to force stop if speech goes too long
                     if (speechTimeoutTimer) clearTimeout(speechTimeoutTimer);
                     speechTimeoutTimer = setTimeout(() => {
                         console.warn('⚠️ [TIMEOUT] Speech exceeded max duration, forcing commit');
                         if (openAiWs.readyState === WebSocket.OPEN) {
+                            // First commit the audio buffer
                             openAiWs.send(JSON.stringify({
                                 type: 'input_audio_buffer.commit'
                             }));
+                            
+                            // 🔴 IMPORTANTE: Dopo il commit, chiedi esplicitamente una risposta
+                            setTimeout(() => {
+                                if (openAiWs.readyState === WebSocket.OPEN) {
+                                    console.log('🎯 [TIMEOUT] Requesting response after forced commit');
+                                    openAiWs.send(JSON.stringify({
+                                        type: 'response.create'
+                                    }));
+                                }
+                            }, 100); // Piccolo delay per assicurarsi che il commit sia processato
                         }
                     }, MAX_SPEECH_DURATION);
                     
@@ -310,8 +295,15 @@ fastify.register(async (fastify) => {
                     }
                     if (speechStartTime) {
                         const duration = Date.now() - speechStartTime;
-                        console.log(`🎤 [SPEECH] User spoke for ${duration}ms`);
+                        console.log(`🎤 [SPEECH STOPPED] Duration: ${duration}ms, Audio chunks: ${audioChunksReceived}`);
+                        
+                        // 🔴 DIAGNOSTICO: Se durata > 10s con pochi chunks = falso positivo
+                        if (duration > 10000 && audioChunksReceived < 50) {
+                            console.warn('⚠️ [VAD WARNING] Long speech with few audio chunks - possible false positive');
+                        }
+                        
                         speechStartTime = null;
+                        audioChunksReceived = 0;
                     }
                 }
                 
@@ -327,13 +319,14 @@ fastify.register(async (fastify) => {
                 switch (data.event) {
                     case 'media':
                         latestMediaTimestamp = data.media.timestamp;
+                        audioChunksReceived++; // Track audio activity
+                        lastAudioTimestamp = Date.now();
+                        
                         if (openAiWs.readyState === WebSocket.OPEN) {
                             openAiWs.send(JSON.stringify({
                                 type: 'input_audio_buffer.append',
                                 audio: data.media.payload
                             }));
-                        } else {
-                            console.warn('⚠️ OpenAI WebSocket not open, cannot send audio');
                         }
                         break;
                         
@@ -366,8 +359,6 @@ fastify.register(async (fastify) => {
             if (openAiWs.readyState === WebSocket.OPEN) {
                 console.log('🔒 Closing OpenAI WebSocket as well');
                 openAiWs.close();
-            } else {
-                console.log('✅ OpenAI WebSocket already closed');
             }
         });
 
