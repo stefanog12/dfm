@@ -236,15 +236,8 @@ fastify.register(async (fastify) => {
                         initializeSession();
                         pendingRagUpdate = false;
                         
-                        // CRITICO: Clear buffer dopo RAG update
-                        setTimeout(() => {
-                            if (openAiWs.readyState === WebSocket.OPEN) {
-                                console.log('🧹 [RAG] Clearing audio buffer after session update');
-                                openAiWs.send(JSON.stringify({
-                                    type: 'input_audio_buffer.clear'
-                                }));
-                            }
-                        }, 100);
+                        // NON fare clear automatico - lascia che il VAD gestisca normalmente
+                        // Il clear viene fatto solo se rileva ghost speech
                     }
                 }
 
