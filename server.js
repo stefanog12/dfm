@@ -63,6 +63,7 @@ fastify.register(async (fastify) => {
         let ragContext = "";
         let hasCalledRag = false;
         let pendingRagUpdate = false;
+        let isUpdatingSession = false; // 🚦 SEMAFORO per bloccare VAD durante update
         
         let speechStartTime = null;
         let speechTimeoutTimer = null;
@@ -78,18 +79,18 @@ fastify.register(async (fastify) => {
             }
         });
 
-        const initializeSession = () => {
+        const initializeSession = (enableVAD = true) => {
             const instructions = BASE_SYSTEM_MESSAGE + (ragContext ? `\n\n🎯 Adatta il tuo stile seguendo questi esempi di conversazioni passate:\n${ragContext}` : "");
             
             const sessionUpdate = {
                 type: 'session.update',
                 session: {
-                    turn_detection: { 
+                    turn_detection: enableVAD ? { 
                         type: 'server_vad',
                         threshold: 0.9,
                         prefix_padding_ms: 100,
                         silence_duration_ms: 700
-                    },
+                    } : null, // 🚦 Disabilita VAD se necessario
                     input_audio_format: 'g711_ulaw',
                     output_audio_format: 'g711_ulaw',
                     voice: VOICE,
@@ -102,7 +103,7 @@ fastify.register(async (fastify) => {
                 }
             };
 
-            console.log('👉 [SESSION INIT] Sending session update with optimized VAD');
+            console.log(`👉 [SESSION INIT] Sending session update (VAD: ${enableVAD ? 'enabled' : 'DISABLED'})`);
             if (ragContext) {
                 console.log('📚 [RAG CONTEXT] Instructions include RAG context');
             }
@@ -131,14 +132,16 @@ fastify.register(async (fastify) => {
                 console.log('📊 [RAG] Top 3 similar conversations:');
                 results.forEach((r, idx) => {
                     console.log(`   ${idx + 1}. ${r.id} (score: ${r.score.toFixed(4)})`);
-                    console.log(`      Preview: ${r.text.substring(0, 100)}...`);
                 });
 
-                ragContext = results.map((r, idx) => 
-                    `Esempio ${idx + 1} (${r.id}):\n${r.text}`
-                ).join('\n\n');
+                // IMPORTANTE: Limita la lunghezza del context per non sovraccaricare
+                ragContext = results.map((r, idx) => {
+                    // Prendi solo i primi 300 caratteri di ogni conversazione
+                    const preview = r.text.substring(0, 300);
+                    return `Esempio ${idx + 1}: ${preview}`;
+                }).join('\n\n');
 
-                console.log('✨ [RAG] Context updated, will update session after current response');
+                console.log(`✨ [RAG] Context updated (${ragContext.length} chars), will update session after current response`);
                 
                 pendingRagUpdate = true;
                 hasCalledRag = true;
@@ -236,11 +239,25 @@ fastify.register(async (fastify) => {
                 if (msg.type === 'response.done' && pendingRagUpdate) {
                     console.log('🔄 [RAG] Applying deferred session update after response.done');
                     
-                    // Piccolo delay per assicurarsi che tutto sia pulito
+                    isUpdatingSession = true; // 🚦 Attiva semaforo
+                    
+                    // Step 1: Disabilita VAD temporaneamente
                     setTimeout(() => {
-                        initializeSession();
-                        pendingRagUpdate = false;
-                        console.log('✅ [RAG] Session updated successfully');
+                        console.log('🚦 [RAG] Step 1: Disabling VAD temporarily');
+                        initializeSession(false); // VAD OFF
+                        
+                        // Step 2: Aspetta che il VAD sia disabilitato, poi applica RAG context
+                        setTimeout(() => {
+                            console.log('🚦 [RAG] Step 2: Applying RAG context with VAD re-enabled');
+                            initializeSession(true); // VAD ON con RAG context
+                            pendingRagUpdate = false;
+                            
+                            // Step 3: Aspetta che tutto sia applicato
+                            setTimeout(() => {
+                                isUpdatingSession = false; // 🚦 Rilascia semaforo
+                                console.log('✅ [RAG] Session update complete, VAD re-enabled');
+                            }, 200);
+                        }, 200);
                     }, 100);
                 }
 
