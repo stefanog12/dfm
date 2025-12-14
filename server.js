@@ -230,15 +230,18 @@ fastify.register(async (fastify) => {
                     lastAssistantItem = null;
                     markQueue = [];
                     audioChunksReceived = 0;
+                }
+                
+                // IMPORTANTE: Aspetta response.done, non audio.done
+                if (msg.type === 'response.done' && pendingRagUpdate) {
+                    console.log('🔄 [RAG] Applying deferred session update after response.done');
                     
-                    if (pendingRagUpdate) {
-                        console.log('🔄 [RAG] Applying deferred session update');
+                    // Piccolo delay per assicurarsi che tutto sia pulito
+                    setTimeout(() => {
                         initializeSession();
                         pendingRagUpdate = false;
-                        
-                        // NON fare clear automatico - lascia che il VAD gestisca normalmente
-                        // Il clear viene fatto solo se rileva ghost speech
-                    }
+                        console.log('✅ [RAG] Session updated successfully');
+                    }, 100);
                 }
 
                 if (msg.type === 'conversation.item.input_audio_transcription.completed' && !hasCalledRag) {
