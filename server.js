@@ -5,11 +5,8 @@ import fastifyFormBody from '@fastify/formbody';
 import fastifyWs from '@fastify/websocket';
 import OpenAI from 'openai';
 import { searchMemory } from './rag.js';
-import fs from 'fs';
 
 dotenv.config();
-
-console.log("Chiave API:", process.env.OPENAI_API_KEY);
 
 const { OPENAI_API_KEY } = process.env;
 if (!OPENAI_API_KEY) {
@@ -18,28 +15,16 @@ if (!OPENAI_API_KEY) {
 }
 
 const openaiClient = new OpenAI({ apiKey: OPENAI_API_KEY });
-
-// ðŸŽ™ï¸ Load prerecorded welcome message
-let WELCOME_AUDIO = null;
-try {
-    WELCOME_AUDIO = fs.readFileSync("welcome_message.ulaw");
-    console.log("âœ… Welcome message loaded");
-} catch (err) {
-    console.warn("âš ï¸ Welcome message not found. Generate it with: node generate_welcome.js");
-}
-
 const fastify = Fastify({ logger: true });
 fastify.register(fastifyFormBody);
 fastify.register(fastifyWs);
 
-const BASE_SYSTEM_MESSAGE = 'You are a friendly and concise AI voice assistant. Keep your answers short and conversational, like a real phone call. Your voice and personality should be warm and engaging, with a lively and playful tone. If interacting in a non-English language, start by using the standard accent or dialect familiar to the user. Prefer sentences under 15 seconds. If the user wants more, ask "Do you want me to continue?"';
+const BASE_SYSTEM_MESSAGE = 'You are a friendly and concise AI voice assistant. Keep your answers SHORT and conversational, like a real phone call. MAXIMUM 2-3 sentences per response. Your voice and personality should be warm and engaging. If interacting in a non-English language, use the standard accent familiar to the user.';
 const VOICE = 'alloy';
 const PORT = process.env.PORT || 3000;
 
-const LOG_EVENT_TYPES = [ 'error', 'response.content.done', 'rate_limits.updated', 'response.done', 'input_audio_buffer.committed', 'input_audio_buffer.speech_stopped', 'input_audio_buffer.speech_started', 'session.created' ];
-
 fastify.get('/', async (req, reply) => {
-    reply.send({ message: 'ðŸŸ¢ Server Twilio/OpenAI + RAG attivo!' });
+    reply.send({ message: '🟢 Server Twilio/OpenAI + RAG attivo!' });
 });
 
 fastify.all('/incoming-call', async (req, reply) => {
@@ -54,49 +39,35 @@ fastify.all('/incoming-call', async (req, reply) => {
 
 fastify.register(async (fastify) => {
     fastify.get('/media-stream', { websocket: true }, (conn, req) => {
-        console.log('ðŸŽ§ Client Twilio connesso');
+        console.log('🎧 Client Twilio connesso');
+        
         let streamSid = null;
         let latestMediaTimestamp = 0;
         let lastAssistantItem = null;
         let markQueue = [];
         let responseStartTimestampTwilio = null;
         
-        // ðŸ†• RAG state
         let ragContext = "";
-        let hasCalledRag = false;
-        let pendingRagUpdate = false;
-        let lastSessionUpdateTime = 0; // Track when we last updated session
-        
-        // â±ï¸ SOLUZIONE 1: Timeout piÃ¹ aggressivo per speech bloccato
-        let speechStartTime = null;
-        let speechTimeoutTimer = null;
-        const MAX_SPEECH_DURATION = 8000; // ðŸ”´ RIDOTTO a 8 secondi (era 15)
-        let isProcessingResponse = false; // ðŸ†• Previeni richieste simultanee
-        
-        // ðŸ†• SOLUZIONE 2: Tracciamento audio effettivo per distinguere silenzio da speech
-        let audioChunksReceived = 0;
-        let lastAudioTimestamp = 0;
-        const SILENCE_THRESHOLD = 1000; // Se non arriva audio per 1 secondo = silenzio
+        let ragApplied = false;
 
-        const openAiWs = new WebSocket("wss://api.openai.com/v1/realtime?model=gpt-realtime", {
+        const openAiWs = new WebSocket('wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-10-01', {
             headers: {
                 Authorization: `Bearer ${OPENAI_API_KEY}`,
                 'OpenAI-Beta': 'realtime=v1'
             }
         });
 
-        // Initialize session with current instructions
-        const initializeSession = () => {
-            const instructions = BASE_SYSTEM_MESSAGE + (ragContext ? `\n\nðŸŽ¯ Adatta il tuo stile seguendo questi esempi di conversazioni passate:\n${ragContext}` : "");
+        const updateSession = () => {
+            const instructions = BASE_SYSTEM_MESSAGE + (ragContext ? `\n\n🎯 Adatta il tuo stile seguendo questi esempi di conversazioni passate:\n${ragContext}` : "");
             
             const sessionUpdate = {
                 type: 'session.update',
                 session: {
                     turn_detection: { 
                         type: 'server_vad',
-                        threshold: 0.8,           // ðŸ”´ AUMENTATO: era 0.7, ora 0.8 (meno sensibile)
-                        prefix_padding_ms: 200,   // ðŸ”´ RIDOTTO: era 300ms (meno padding iniziale)
-                        silence_duration_ms: 500  // ðŸ”´ AUMENTATO: era 300ms, ora 500ms (attende piÃ¹ silenzio)
+                        threshold: 0.5,
+                        prefix_padding_ms: 300,
+                        silence_duration_ms: 500
                     },
                     input_audio_format: 'g711_ulaw',
                     output_audio_format: 'g711_ulaw',
@@ -104,30 +75,20 @@ fastify.register(async (fastify) => {
                     instructions: instructions,
                     modalities: ["text", "audio"],
                     temperature: 0.8,
+                    max_response_output_tokens: 150,
                     input_audio_transcription: {
                         model: "whisper-1"
                     }
                 }
             };
 
-            console.log('ðŸ‘‰ [SESSION INIT] Sending session update with optimized VAD');
-            if (ragContext) {
-                console.log('ðŸ“š [RAG CONTEXT] Instructions include RAG context');
-            }
-            
-            lastSessionUpdateTime = Date.now(); // Track update time
-            
-            try {
-                openAiWs.send(JSON.stringify(sessionUpdate));
-            } catch (err) {
-                console.error('ðŸš¨ [SESSION INIT] Failed to send session update:', err);
-            }
+            console.log('📤 Updating session' + (ragContext ? ' (with RAG context)' : ''));
+            openAiWs.send(JSON.stringify(sessionUpdate));
         };
 
-        // ðŸ†• Generate embedding and search similar conversations
-        async function callRagOnFirstQuery(userText) {
+        async function enrichWithRAG(userText) {
             try {
-                console.log('ðŸ” [RAG] Generating embedding for user query:', userText);
+                console.log('🔍 [RAG] Searching for:', userText);
                 
                 const embeddingResponse = await openaiClient.embeddings.create({
                     model: "text-embedding-3-small",
@@ -135,38 +96,34 @@ fastify.register(async (fastify) => {
                 });
 
                 const queryEmbedding = embeddingResponse.data[0].embedding;
-                console.log('âœ… [RAG] Embedding generated');
-
-                // Search similar conversations
                 const results = await searchMemory(queryEmbedding, 3);
                 
-                console.log('ðŸ“Š [RAG] Top 3 similar conversations:');
+                console.log('📊 [RAG] Found', results.length, 'similar conversations');
                 results.forEach((r, idx) => {
                     console.log(`   ${idx + 1}. ${r.id} (score: ${r.score.toFixed(4)})`);
-                    console.log(`      Preview: ${r.text.substring(0, 100)}...`);
                 });
 
-                // Format context from top results
-                ragContext = results.map((r, idx) => 
-                    `Esempio ${idx + 1} (${r.id}):\n${r.text}`
-                ).join('\n\n');
+                ragContext = results.map((r, idx) => {
+                    const preview = r.text.substring(0, 300);
+                    return `Esempio ${idx + 1}: ${preview}`;
+                }).join('\n\n');
 
-                console.log('âœ¨ [RAG] Context updated, will update session after current response');
-                
-                // Don't update immediately - wait for current response to finish
-                pendingRagUpdate = true;
-                hasCalledRag = true;
+                console.log('✨ [RAG] Context ready, updating session...');
+                updateSession();
+                ragApplied = true;
                 
             } catch (err) {
-                console.error('âŒ [RAG] Error:', err);
+                console.error('❌ [RAG] Error:', err);
             }
         }
 
-        const handleSpeechStartedEvent = () => {
-            console.log('ðŸ”Š Speech started detected from OpenAI');
+        const handleSpeechStarted = () => {
+            console.log('🎤 User started speaking');
+            
             if (markQueue.length > 0 && responseStartTimestampTwilio != null) {
                 const elapsedTime = latestMediaTimestamp - responseStartTimestampTwilio;
-                console.log(`â±ï¸ Truncating last assistant item at ${elapsedTime} ms`);
+                console.log(`⏱️ Interrupting assistant at ${elapsedTime}ms`);
+                
                 if (lastAssistantItem) {
                     openAiWs.send(JSON.stringify({
                         type: 'conversation.item.truncate',
@@ -175,6 +132,7 @@ fastify.register(async (fastify) => {
                         audio_end_ms: elapsedTime
                     }));
                 }
+                
                 conn.send(JSON.stringify({ event: 'clear', streamSid }));
                 markQueue = [];
                 lastAssistantItem = null;
@@ -194,13 +152,12 @@ fastify.register(async (fastify) => {
         };
 
         openAiWs.on('open', () => {
-            console.log('ðŸ§  OpenAI WebSocket connection opened (readyState:', openAiWs.readyState, ')');
-            initializeSession();
+            console.log('🧠 OpenAI WebSocket connected');
+            updateSession();
             
-            // ðŸŽ¤ Send welcome message via OpenAI
             setTimeout(() => {
                 if (openAiWs.readyState === WebSocket.OPEN) {
-                    console.log('ðŸ“¢ Sending welcome message via OpenAI');
+                    console.log('📢 Sending welcome message');
                     openAiWs.send(JSON.stringify({
                         type: 'response.create',
                         response: {
@@ -209,22 +166,17 @@ fastify.register(async (fastify) => {
                         }
                     }));
                 }
-            }, 500);
+            }, 250);
         });
 
         openAiWs.on('message', async (data) => {
             try {
                 const msg = JSON.parse(data);
-                
-                // ðŸ“Š Log ALL events to debug
-                console.log(`[OpenAI EVENT] ${msg.type}`);
-                
-                // ðŸš¨ Log detailed errors
+
                 if (msg.type === 'error') {
-                    console.error('âŒ [OpenAI ERROR]:', JSON.stringify(msg, null, 2));
+                    console.error('❌ [OpenAI ERROR]:', msg.error);
                 }
 
-                // Handle audio streaming
                 if (msg.type === 'response.audio.delta' && msg.delta) {
                     conn.send(JSON.stringify({
                         event: 'media',
@@ -234,113 +186,35 @@ fastify.register(async (fastify) => {
 
                     if (!responseStartTimestampTwilio) {
                         responseStartTimestampTwilio = latestMediaTimestamp;
-                        isProcessingResponse = false; // Reset quando inizia effettivamente la risposta
                     }
 
                     if (msg.item_id) lastAssistantItem = msg.item_id;
                     sendMark();
                 }
                 
-                if (msg.type === 'response.audio.done') {
-                    console.log('âœ… [AUDIO DONE] Full audio sent');
-                    
-                    // Reset stato per la prossima interazione
+                if (msg.type === 'response.done') {
+                    console.log('✅ Response completed');
                     responseStartTimestampTwilio = null;
                     lastAssistantItem = null;
                     markQueue = [];
-                    audioChunksReceived = 0;
-                    isProcessingResponse = false;
-                    
-                    // ðŸ†• Apply pending RAG update after response completes
-                    if (pendingRagUpdate) {
-                        console.log('ðŸ”„ [RAG] Applying deferred session update');
-                        initializeSession();
-                        pendingRagUpdate = false;
-                        
-                        // ðŸ”´ IMPORTANTE: Dopo il session update, pulisci il buffer audio
-                        // per evitare che resti in uno stato inconsistente
-                        setTimeout(() => {
-                            if (openAiWs.readyState === WebSocket.OPEN) {
-                                console.log('ðŸ§¹ [RAG] Clearing audio buffer after session update');
-                                openAiWs.send(JSON.stringify({
-                                    type: 'input_audio_buffer.clear'
-                                }));
-                            }
-                        }, 100);
-                    }
                 }
 
-                // ðŸ†• Capture user speech for RAG (first time only)
-                if (msg.type === 'conversation.item.input_audio_transcription.completed' && !hasCalledRag) {
-                    const userText = msg.transcript;
-                    if (userText && userText.trim().length > 0) {
-                        console.log('ðŸ’¬ [FIRST USER MESSAGE]:', userText);
-                        await callRagOnFirstQuery(userText);
-                    }
-                }
-
-                // Handle speech interruption
                 if (msg.type === 'input_audio_buffer.speech_started') {
-                    console.log('ðŸŽ¤ [SPEECH STARTED] User started speaking');
-                    speechStartTime = Date.now();
-                    audioChunksReceived = 0; // Reset counter
-                    lastAudioTimestamp = Date.now();
-                    isProcessingResponse = false; // Reset flag quando inizia nuovo speech
-                    
-                    // Set timeout to force stop if speech goes too long
-                    if (speechTimeoutTimer) clearTimeout(speechTimeoutTimer);
-                    speechTimeoutTimer = setTimeout(() => {
-                        if (isProcessingResponse) {
-                            console.log('â­ï¸ [TIMEOUT] Already processing response, skipping');
-                            return;
-                        }
-                        
-                        console.warn('âš ï¸ [TIMEOUT] Speech exceeded max duration, forcing commit');
-                        isProcessingResponse = true;
-                        
-                        if (openAiWs.readyState === WebSocket.OPEN) {
-                            // First commit the audio buffer
-                            openAiWs.send(JSON.stringify({
-                                type: 'input_audio_buffer.commit'
-                            }));
-                            
-                            // ðŸ”´ IMPORTANTE: Dopo il commit, chiedi esplicitamente una risposta
-                            setTimeout(() => {
-                                if (openAiWs.readyState === WebSocket.OPEN && isProcessingResponse) {
-                                    console.log('ðŸŽ¯ [TIMEOUT] Requesting response after forced commit');
-                                    openAiWs.send(JSON.stringify({
-                                        type: 'response.create'
-                                    }));
-                                }
-                            }, 200); // Aumentato a 200ms per dare tempo al commit
-                        }
-                    }, MAX_SPEECH_DURATION);
-                    
-                    handleSpeechStartedEvent();
+                    handleSpeechStarted();
                 }
-                
-                if (msg.type === 'input_audio_buffer.speech_stopped') {
-                    if (speechTimeoutTimer) {
-                        clearTimeout(speechTimeoutTimer);
-                        speechTimeoutTimer = null;
+
+                if (msg.type === 'conversation.item.input_audio_transcription.completed') {
+                    const userText = msg.transcript;
+                    console.log('💬 User said:', userText);
+                    
+                    // Fai RAG solo sulla prima richiesta
+                    if (!ragApplied && userText && userText.trim().length > 5) {
+                        await enrichWithRAG(userText);
                     }
-                    if (speechStartTime) {
-                        const duration = Date.now() - speechStartTime;
-                        console.log(`ðŸŽ¤ [SPEECH STOPPED] Duration: ${duration}ms, Audio chunks: ${audioChunksReceived}`);
-                        
-                        // ðŸ”´ DIAGNOSTICO: Se durata > 10s con pochi chunks = falso positivo
-                        if (duration > 10000 && audioChunksReceived < 50) {
-                            console.warn('âš ï¸ [VAD WARNING] Long speech with few audio chunks - possible false positive');
-                        }
-                        
-                        speechStartTime = null;
-                        audioChunksReceived = 0;
-                    }
-                    // Non resettare isProcessingResponse qui - aspetta che la risposta inizi
                 }
                 
             } catch (err) {
-                console.error('Errore parsing da OpenAI:', err);
+                console.error('Error parsing OpenAI message:', err);
             }
         });
 
@@ -351,15 +225,6 @@ fastify.register(async (fastify) => {
                 switch (data.event) {
                     case 'media':
                         latestMediaTimestamp = data.media.timestamp;
-                        audioChunksReceived++; // Track audio activity
-                        lastAudioTimestamp = Date.now();
-                        
-                        // ðŸ”´ DIAGNOSTICO: Avvisa se ricevi audio subito dopo un session update
-                        if (lastSessionUpdateTime && (Date.now() - lastSessionUpdateTime) < 5000) {
-                            if (audioChunksReceived % 100 === 0) { // Log ogni 100 chunks
-                                console.log(`ðŸ“Š [AUDIO] Receiving audio after session update (${audioChunksReceived} chunks)`);
-                            }
-                        }
                         
                         if (openAiWs.readyState === WebSocket.OPEN) {
                             openAiWs.send(JSON.stringify({
@@ -371,46 +236,35 @@ fastify.register(async (fastify) => {
                         
                     case 'start':
                         streamSid = data.start.streamSid;
-                        console.log('ðŸš€ Stream started. SID:', streamSid);
+                        console.log('🚀 Stream started:', streamSid);
                         break;
                         
                     case 'mark':
                         if (markQueue.length > 0) markQueue.shift();
                         break;
-                        
-                    default:
-                        break;
                 }
             } catch (err) {
-                console.error('Errore parsing da Twilio:', err);
+                console.error('Error parsing Twilio message:', err);
             }
         });
 
         conn.on('close', () => {
-            console.log('âŒ Twilio WebSocket connection closed');
-            
-            // Clean up timeout
-            if (speechTimeoutTimer) {
-                clearTimeout(speechTimeoutTimer);
-                speechTimeoutTimer = null;
-            }
-            
+            console.log('❌ Twilio connection closed');
             if (openAiWs.readyState === WebSocket.OPEN) {
-                console.log('ðŸ”’ Closing OpenAI WebSocket as well');
                 openAiWs.close();
             }
         });
 
         openAiWs.on('error', (err) => {
-            console.error('Errore OpenAI WS:', err);
+            console.error('OpenAI WebSocket error:', err);
         });
     });
 });
 
 fastify.listen({ port: PORT, host: '0.0.0.0' }, (err) => {
     if (err) {
-        console.error('Errore di avvio:', err);
+        console.error('Server error:', err);
         process.exit(1);
     }
-    console.log(`ðŸš€ Server avviato su http://0.0.0.0:${PORT}`);
+    console.log(`🚀 Server running on http://0.0.0.0:${PORT}`);
 });
