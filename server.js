@@ -154,9 +154,14 @@ fastify.register(async (fastify) => {
         openAiWs.on('open', () => {
             console.log('🧠 OpenAI WebSocket connected');
             updateSession();
-            
-            setTimeout(() => {
-                if (openAiWs.readyState === WebSocket.OPEN) {
+        });
+
+        openAiWs.on('message', async (data) => {
+            try {
+                const msg = JSON.parse(data);
+
+                // Dopo session.updated, invia il welcome message
+                if (msg.type === 'session.updated' && !responseStartTimestampTwilio) {
                     console.log('📢 Sending welcome message');
                     openAiWs.send(JSON.stringify({
                         type: 'response.create',
@@ -165,13 +170,8 @@ fastify.register(async (fastify) => {
                             instructions: 'Say: "DFM clima, buongiorno. Sono l\'assistente virtuale. Come posso aiutarla?"'
                         }
                     }));
+                    return;
                 }
-            }, 250);
-        });
-
-        openAiWs.on('message', async (data) => {
-            try {
-                const msg = JSON.parse(data);
 
                 if (msg.type === 'error') {
                     console.error('❌ [OpenAI ERROR]:', msg.error);
