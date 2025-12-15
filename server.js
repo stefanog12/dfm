@@ -285,26 +285,7 @@ fastify.register(async (fastify) => {
                         console.log('🎯 First message - applying RAG');
                         await addRagContext(userText);
                         
-                        // Pulisci il buffer e forza una nuova risposta
-                        setTimeout(() => {
-                            if (openAiWs.readyState === WebSocket.OPEN) {
-                                console.log('🧹 Clearing audio buffer');
-                                openAiWs.send(JSON.stringify({
-                                    type: 'input_audio_buffer.clear'
-                                }));
-                                
-                                setTimeout(() => {
-                                    console.log('🔄 Requesting response with RAG context');
-                                    openAiWs.send(JSON.stringify({
-                                        type: 'response.create',
-                                        response: {
-                                            modalities: ['text', 'audio'],
-                                            instructions: 'Rispondi alla domanda dell\'utente usando lo stile delle conversazioni di esempio fornite.'
-                                        }
-                                    }));
-                                }, 200);
-                            }
-                        }, 100);
+                       
                     }
                 }
                 
