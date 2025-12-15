@@ -115,16 +115,7 @@ fastify.register(async (fastify) => {
                 console.log('ðŸ“š [RAG CONTEXT] Instructions include RAG context');
             }
             
-            lastSessionUpdateTime = Date.now(); // Track update time
-            
-            try {
-                openAiWs.send(JSON.stringify(sessionUpdate));
-            } catch (err) {
-                console.error('ðŸš¨ [SESSION INIT] Failed to send session update:', err);
-            }
-        };
-
-        // ðŸ†• Generate embedding and search similar conversations
+             // ðŸ†• Generate embedding and search similar conversations
         async function callRagOnFirstQuery(userText) {
             try {
                 console.log('ðŸ” [RAG] Generating embedding for user query:', userText);
@@ -214,10 +205,11 @@ fastify.register(async (fastify) => {
                         media: { payload: msg.delta }
                     }));
 
-                    if (!responseStartTimestampTwilio) {
-                        responseStartTimestampTwilio = latestMediaTimestamp;
-                        isProcessingResponse = false; // Reset quando inizia effettivamente la risposta
-                    }
+			
+                if (!responseStartTimestampTwilio) {
+                      responseStartTimestampTwilio = latestMediaTimestamp;
+                     isProcessingResponse = false; // Reset quando inizia effettivamente la risposta
+                }
 
                     if (msg.item_id) lastAssistantItem = msg.item_id;
                     sendMark();
@@ -236,19 +228,22 @@ fastify.register(async (fastify) => {
                     // ðŸ†• Apply pending RAG update after response completes
                     if (pendingRagUpdate) {
                         console.log('ðŸ”„ [RAG] Applying deferred session update');
-                        initializeSession();
+                    //    initializeSession();
+					openAiWs.send(JSON.stringify({
+  type: "conversation.item.create",
+  item: {
+    type: "message",
+    role: "system",
+    content: [{
+      type: "text",
+      text: `Usa questi esempi reali per rispondere:\n\n${ragContext}`
+    }]
+  }
+}));
+
                         pendingRagUpdate = false;
                         
-                        // ðŸ”´ IMPORTANTE: Dopo il session update, pulisci il buffer audio
-                        // per evitare che resti in uno stato inconsistente
-                        setTimeout(() => {
-                            if (openAiWs.readyState === WebSocket.OPEN) {
-                                console.log('ðŸ§¹ [RAG] Clearing audio buffer after session update');
-                                openAiWs.send(JSON.stringify({
-                                    type: 'input_audio_buffer.clear'
-                                }));
-                            }
-                        }, 100);
+                      
                     }
                 }
 
@@ -292,6 +287,8 @@ fastify.register(async (fastify) => {
                                     console.log('ðŸŽ¯ [TIMEOUT] Requesting response after forced commit');
                                     openAiWs.send(JSON.stringify({
                                         type: 'response.create'
+										 
+  
                                     }));
                                 }
                             }, 200); // Aumentato a 200ms per dare tempo al commit
