@@ -61,6 +61,9 @@ fastify.register(async (fastify) => {
         
         let ragApplied = false;
         let welcomeSent = false;
+        
+        let speechTimeout = null;
+        const MAX_SPEECH_DURATION = 8000; // 8 secondi
 
         const openAiWs = new WebSocket('wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-10-01', {
             headers: {
@@ -76,9 +79,9 @@ fastify.register(async (fastify) => {
                 session: {
                     turn_detection: { 
                         type: 'server_vad',
-                        threshold: 0.85,
-                        prefix_padding_ms: 200,
-                        silence_duration_ms: 500
+                        threshold: 0.5,
+                        prefix_padding_ms: 300,
+                        silence_duration_ms: 700
                     },
                     input_audio_format: 'g711_ulaw',
                     output_audio_format: 'g711_ulaw',
@@ -247,7 +250,30 @@ fastify.register(async (fastify) => {
                 }
 
                 if (msg.type === 'input_audio_buffer.speech_started') {
+                    console.log('🎤 User speech detected');
                     handleSpeechStarted();
+                    
+                    // Timeout di sicurezza: forza commit dopo 8 secondi
+                    if (speechTimeout) clearTimeout(speechTimeout);
+                    speechTimeout = setTimeout(() => {
+                        console.warn('⏰ [TIMEOUT] Forcing speech_stopped after 8s');
+                        if (openAiWs.readyState === WebSocket.OPEN) {
+                            openAiWs.send(JSON.stringify({
+                                type: 'input_audio_buffer.commit'
+                            }));
+                            openAiWs.send(JSON.stringify({
+                                type: 'response.create'
+                            }));
+                        }
+                    }, MAX_SPEECH_DURATION);
+                }
+                
+                if (msg.type === 'input_audio_buffer.speech_stopped') {
+                    console.log('🛑 Speech stopped detected');
+                    if (speechTimeout) {
+                        clearTimeout(speechTimeout);
+                        speechTimeout = null;
+                    }
                 }
 
                 // Do RAG only on first user message
@@ -298,6 +324,12 @@ fastify.register(async (fastify) => {
 
         conn.on('close', () => {
             console.log('❌ Twilio connection closed');
+            
+            if (speechTimeout) {
+                clearTimeout(speechTimeout);
+                speechTimeout = null;
+            }
+            
             if (openAiWs.readyState === WebSocket.OPEN) {
                 openAiWs.close();
             }
