@@ -284,6 +284,16 @@ fastify.register(async (fastify) => {
                     if (!ragApplied && userText && userText.trim().length > 5) {
                         console.log('🎯 First message - applying RAG');
                         await addRagContext(userText);
+                        
+                        // Forza una nuova risposta dopo aver aggiunto il RAG context
+                        setTimeout(() => {
+                            if (openAiWs.readyState === WebSocket.OPEN) {
+                                console.log('🔄 Requesting response with RAG context');
+                                openAiWs.send(JSON.stringify({
+                                    type: 'response.create'
+                                }));
+                            }
+                        }, 300);
                     }
                 }
                 
