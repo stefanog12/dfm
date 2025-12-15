@@ -5,6 +5,7 @@ import fastifyFormBody from '@fastify/formbody';
 import fastifyWs from '@fastify/websocket';
 import OpenAI from 'openai';
 import { searchMemory } from './rag.js';
+import fs from 'fs';
 
 dotenv.config();
 
@@ -17,6 +18,14 @@ if (!OPENAI_API_KEY) {
 }
 
 const openaiClient = new OpenAI({ apiKey: OPENAI_API_KEY });
+
+let WELCOME_AUDIO = null;
+try {
+    WELCOME_AUDIO = fs.readFileSync("welcome_message.ulaw");
+    console.log("✅ Welcome message loaded");
+} catch (err) {
+    console.warn("⚠️ Welcome message not found. Generate it with: node generate_welcome.js");
+}
 
 const fastify = Fastify({ logger: true });
 fastify.register(fastifyFormBody);
@@ -51,6 +60,7 @@ fastify.register(async (fastify) => {
         let responseStartTimestampTwilio = null;
         
         let ragApplied = false;
+        let welcomeSent = false;
 
         const openAiWs = new WebSocket('wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-10-01', {
             headers: {
@@ -179,17 +189,34 @@ fastify.register(async (fastify) => {
                 const msg = JSON.parse(data);
 
                 // Send welcome message after session is ready
-                if (msg.type === 'session.updated') {
+                if (msg.type === 'session.updated' && !welcomeSent) {
                     console.log('✅ Session ready');
+                    welcomeSent = true;
+                    
                     setTimeout(() => {
-                        console.log('📢 Sending welcome message');
-                        openAiWs.send(JSON.stringify({
-                            type: 'response.create',
-                            response: {
-                                modalities: ['text', 'audio'],
-                                instructions: 'Say: "DFM clima, buongiorno. Sono l\'assistente virtuale. Come posso aiutarla?"'
+                        if (WELCOME_AUDIO && streamSid) {
+                            console.log('📢 Sending prerecorded welcome message');
+                            const audioBase64 = WELCOME_AUDIO.toString('base64');
+                            const chunkSize = 160;
+                            
+                            for (let i = 0; i < audioBase64.length; i += chunkSize) {
+                                const chunk = audioBase64.substring(i, i + chunkSize);
+                                conn.send(JSON.stringify({
+                                    event: 'media',
+                                    streamSid,
+                                    media: { payload: chunk }
+                                }));
                             }
-                        }));
+                        } else {
+                            console.log('📢 Sending welcome message via OpenAI');
+                            openAiWs.send(JSON.stringify({
+                                type: 'response.create',
+                                response: {
+                                    modalities: ['text', 'audio'],
+                                    instructions: 'Say: "DFM clima, buongiorno. Sono l\'assistente virtuale. Come posso aiutarla?"'
+                                }
+                            }));
+                        }
                     }, 250);
                 }
 
