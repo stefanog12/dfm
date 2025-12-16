@@ -89,7 +89,7 @@ fastify.register(async (fastify) => {
                     instructions: BASE_SYSTEM_MESSAGE,
                     modalities: ["text", "audio"],
                     temperature: 0.8,
-					max_response_output_tokens: 150,
+					// max_response_output_tokens: 150,
                     input_audio_transcription: {
                         model: "whisper-1"
                     }
