@@ -63,7 +63,11 @@ fastify.register(async (fastify) => {
         let welcomeSent = false;
         
         let speechTimeout = null;
+        let silenceTimeout = null;
         const MAX_SPEECH_DURATION = 8000; // 8 secondi
+        const SILENCE_DETECTION = 1500; // 1.5 secondi di silenzio
+        let lastAudioTimestamp = 0;
+        let isSpeaking = false;
 
         const openAiWs = new WebSocket('wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-10-01', {
             headers: {
@@ -77,12 +81,7 @@ fastify.register(async (fastify) => {
             const sessionUpdate = {
                 type: 'session.update',
                 session: {
-                    turn_detection: { 
-                        type: 'server_vad',
-                        threshold: 0.5,
-                        prefix_padding_ms: 300,
-                        silence_duration_ms: 700
-                    },
+                    turn_detection: null,  // 🔥 Disabilita VAD automatico - gestiamo tutto manualmente
                     input_audio_format: 'g711_ulaw',
                     output_audio_format: 'g711_ulaw',
                     voice: VOICE,
@@ -96,7 +95,7 @@ fastify.register(async (fastify) => {
                 }
             };
 
-            console.log('📤 Initializing session (ONCE)');
+            console.log('📤 Initializing session (ONCE) - Manual turn detection');
             openAiWs.send(JSON.stringify(sessionUpdate));
         };
 
@@ -252,16 +251,19 @@ fastify.register(async (fastify) => {
                 if (msg.type === 'input_audio_buffer.speech_started') {
                     console.log('🎤 User speech detected');
                     handleSpeechStarted();
+                    isSpeaking = true;
                     
                     // Timeout di sicurezza: forza commit dopo 8 secondi
                     if (speechTimeout) clearTimeout(speechTimeout);
+                    if (silenceTimeout) clearTimeout(silenceTimeout);
+                    
                     speechTimeout = setTimeout(() => {
-                        console.warn('⏰ [TIMEOUT] Forcing speech_stopped after 8s');
-                        if (openAiWs.readyState === WebSocket.OPEN) {
+                        console.warn('⏰ [TIMEOUT] Forcing commit after 8s');
+                        if (openAiWs.readyState === WebSocket.OPEN && isSpeaking) {
+                            isSpeaking = false;
                             openAiWs.send(JSON.stringify({
                                 type: 'input_audio_buffer.commit'
                             }));
-                            // NON creare la risposta qui - aspetta la trascrizione
                         }
                     }, MAX_SPEECH_DURATION);
                 }
@@ -272,10 +274,11 @@ fastify.register(async (fastify) => {
                         clearTimeout(speechTimeout);
                         speechTimeout = null;
                     }
+                    // Nota: NON committiamo ancora - aspettiamo il silenzio
                 }
                 
                 if (msg.type === 'input_audio_buffer.committed') {
-                    console.log('✅ Audio buffer committed');
+                    console.log('✅ Audio buffer committed - waiting for transcription');
                 }
 
                 // Do RAG only on first user message, BEFORE response
@@ -296,6 +299,16 @@ fastify.register(async (fastify) => {
                                 }));
                             }
                         }, 200);
+                    } else if (ragApplied) {
+                        // Risposte successive (RAG già applicato)
+                        console.log('💬 Subsequent message - creating response');
+                        setTimeout(() => {
+                            if (openAiWs.readyState === WebSocket.OPEN) {
+                                openAiWs.send(JSON.stringify({
+                                    type: 'response.create'
+                                }));
+                            }
+                        }, 100);
                     }
                 }
                 
@@ -311,12 +324,27 @@ fastify.register(async (fastify) => {
                 switch (data.event) {
                     case 'media':
                         latestMediaTimestamp = data.media.timestamp;
+                        lastAudioTimestamp = Date.now();
                         
                         if (openAiWs.readyState === WebSocket.OPEN) {
                             openAiWs.send(JSON.stringify({
                                 type: 'input_audio_buffer.append',
                                 audio: data.media.payload
                             }));
+                            
+                            // Rileva silenzio: se passa 1.5s senza audio, committa
+                            if (isSpeaking) {
+                                if (silenceTimeout) clearTimeout(silenceTimeout);
+                                silenceTimeout = setTimeout(() => {
+                                    if (isSpeaking && openAiWs.readyState === WebSocket.OPEN) {
+                                        console.log('🤫 Silence detected - committing audio');
+                                        isSpeaking = false;
+                                        openAiWs.send(JSON.stringify({
+                                            type: 'input_audio_buffer.commit'
+                                        }));
+                                    }
+                                }, SILENCE_DETECTION);
+                            }
                         }
                         break;
                         
@@ -340,6 +368,10 @@ fastify.register(async (fastify) => {
             if (speechTimeout) {
                 clearTimeout(speechTimeout);
                 speechTimeout = null;
+            }
+            if (silenceTimeout) {
+                clearTimeout(silenceTimeout);
+                silenceTimeout = null;
             }
             
             if (openAiWs.readyState === WebSocket.OPEN) {
