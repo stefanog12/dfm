@@ -230,7 +230,7 @@ fastify.register(async (fastify) => {
                 }
 
                 if (msg.type === 'response.audio.delta' && msg.delta) {
-					console.log("🔊 AUDIO CHUNK ARRIVATO", msg.delta.length);
+					// console.log("🔊 AUDIO CHUNK ARRIVATO", msg.delta.length);
                     conn.send(JSON.stringify({
                         event: 'media',
                         streamSid,
@@ -247,13 +247,24 @@ fastify.register(async (fastify) => {
 				
 				if (msg.type === 'response.audio.done') {
                     console.log('âœ… [AUDIO DONE] Full audio sent');
+					setTimeout(() => {
+							// Clear SOLO qui per evitare interferenze con la risposta forzata
+						console.log('CLEAR BUFFER II');
+						openAiWs.send(JSON.stringify({
+							type: "input_audio_buffer.clear"
+						}));
+					}, 100);
+							
 					responseStartTimestampTwilio = null;
                     lastAssistantItem = null;
                     markQueue = [];
 				}
                 
                 if (msg.type === 'response.done') {
-                    console.log('✅ Response completed');  
+                    console.log('✅ Response completed'); 
+					openAiWs.send(JSON.stringify({
+						type: "input_audio_buffer.start"
+					}));					
                 }
 
                 if (msg.type === 'input_audio_buffer.speech_started') {
