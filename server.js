@@ -101,6 +101,45 @@ fastify.register(async (fastify) => {
             console.log('📤 Initializing session (ONCE)');
             openAiWs.send(JSON.stringify(sessionUpdate));
         };
+		
+		// Update session for next question and wake VAD
+        const WakeVADSession = () => {
+            const instructions = BASE_SYSTEM_MESSAGE + (ragContext ? `\n\nðŸŽ¯ Adatta il tuo stile seguendo questi esempi di conversazioni passate:\n${ragContext}` : "");
+            
+            const sessionUpdate = {
+                type: 'session.update',
+                session: {
+                    turn_detection: { 
+                        type: 'server_vad',
+                        threshold: 0.7,           // ðŸ”´ AUMENTATO: era 0.7, ora 0.8 (meno sensibile)
+                        prefix_padding_ms: 200,   // ðŸ”´ RIDOTTO: era 300ms (meno padding iniziale)
+                        silence_duration_ms: 300  // ðŸ”´ AUMENTATO: era 300ms, ora 500ms (attende piÃ¹ silenzio)
+                    },
+                    input_audio_format: 'g711_ulaw',
+                    output_audio_format: 'g711_ulaw',
+                    voice: VOICE,
+                    instructions: instructions,
+                    modalities: ["text", "audio"],
+                    temperature: 0.8,
+                    input_audio_transcription: {
+                        model: "whisper-1"
+                    }
+                }
+            };
+
+            console.log('ðŸ‘‰ [SESSION UPDATE] re-Wake optimized VAD');
+            if (ragContext) {
+                console.log('ðŸ“š [RAG CONTEXT] Instructions include RAG context');
+            }
+            
+            lastSessionUpdateTime = Date.now(); // Track update time
+            
+            try {
+                openAiWs.send(JSON.stringify(sessionUpdate));
+            } catch (err) {
+                console.error('ðŸš¨ [SESSION UPDATE] Failed to send session update:', err);
+            }
+        };
 
         // Add RAG context as a conversation item (system message)
         async function addRagContext(userText) {
@@ -256,6 +295,7 @@ fastify.register(async (fastify) => {
                 
                 if (msg.type === 'response.done') {
                     console.log('✅ Response completed'); 
+					WakeVADSession();
 							
                 }
 
