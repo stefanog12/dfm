@@ -65,7 +65,7 @@ fastify.register(async (fastify) => {
         let speechTimeout = null;
         const MAX_SPEECH_DURATION = 8000; // 8 secondi
 
-        const openAiWs = new WebSocket('wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-10-01', {
+        const openAiWs = new WebSocket('wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview', {
             headers: {
                 Authorization: `Bearer ${OPENAI_API_KEY}`,
                 'OpenAI-Beta': 'realtime=v1'
@@ -89,13 +89,14 @@ fastify.register(async (fastify) => {
                     instructions: BASE_SYSTEM_MESSAGE,
                     modalities: ["text", "audio"],
                     temperature: 0.8,
-                    max_response_output_tokens: 150,
                     input_audio_transcription: {
                         model: "whisper-1"
                     }
                 }
             };
 
+		//	max_response_output_tokens: 150,
+				
             console.log('📤 Initializing session (ONCE)');
             openAiWs.send(JSON.stringify(sessionUpdate));
         };
@@ -297,8 +298,7 @@ fastify.register(async (fastify) => {
 									response: {
 										modalities: ["audio", "text"],
 													voice: VOICE,
-													temperature: 0.8,
-													output_audio_format: "g711_ulaw"
+													temperature: 0.8
 									}
 								}));
 
