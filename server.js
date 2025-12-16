@@ -192,6 +192,7 @@ fastify.register(async (fastify) => {
         openAiWs.on('message', async (data) => {
             try {
                 const msg = JSON.parse(data);
+				console.log('MSG = ', msg.type);
 
                 // Send welcome message after session is ready
                 if (msg.type === 'session.updated' && !welcomeSent) {
@@ -262,7 +263,7 @@ fastify.register(async (fastify) => {
                 
                 if (msg.type === 'response.done') {
                     console.log('✅ Response completed'); 
-					initializeSession(); // Initialize for further requests			
+							
                 }
 
                 if (msg.type === 'input_audio_buffer.speech_started') {
