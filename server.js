@@ -296,23 +296,24 @@ fastify.register(async (fastify) => {
 							openAiWs.send(JSON.stringify({
 								type: "input_audio_buffer.clear"
 							}));
-						}
+						
                         
-                        // Forza una nuova risposta dopo aver aggiunto il RAG context
-                        setTimeout(() => {
-                            if (openAiWs.readyState === WebSocket.OPEN) {
-                                console.log('🔄 Requesting response with RAG context');
-                                openAiWs.send(JSON.stringify({
-									type: "response.create",
-									response: {
-										modalities: ["audio", "text"],
+							// Forza una nuova risposta dopo aver aggiunto il RAG context
+							setTimeout(() => {
+								if (openAiWs.readyState === WebSocket.OPEN) {
+									console.log('🔄 Requesting response with RAG context');
+									openAiWs.send(JSON.stringify({
+										type: "response.create",
+										response: {
+											modalities: ["audio", "text"],
 													voice: VOICE,
 													temperature: 0.8
-									}
-								}));
+										}
+									}));
 
-                            }
-                        }, 300);
+								}	
+							}, 300);
+						}, 300);
                     }
                 }
                 
