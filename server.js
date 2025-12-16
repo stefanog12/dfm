@@ -288,8 +288,14 @@ fastify.register(async (fastify) => {
                             if (openAiWs.readyState === WebSocket.OPEN) {
                                 console.log('🔄 Requesting response with RAG context');
                                 openAiWs.send(JSON.stringify({
-                                    type: 'response.create'
-                                }));
+									type: "response.create",
+									response: {
+										modalities: ["audio", "text"],
+													voice: VOICE,
+													temperature: 0.8
+									}
+								}));
+
                             }
                         }, 300);
                     }
