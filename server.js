@@ -192,7 +192,7 @@ fastify.register(async (fastify) => {
         openAiWs.on('message', async (data) => {
             try {
                 const msg = JSON.parse(data);
-				console.log('MSG = ', msg.type);
+				console.log('MSG = ', msg);
 
                 // Send welcome message after session is ready
                 if (msg.type === 'session.updated' && !welcomeSent) {
@@ -248,14 +248,7 @@ fastify.register(async (fastify) => {
 				
 				if (msg.type === 'response.audio.done') {
                     console.log('âœ… [AUDIO DONE] Full audio sent');
-					setTimeout(() => {
-							// Clear SOLO qui per evitare interferenze con la risposta forzata
-						// console.log('CLEAR BUFFER II');
-						openAiWs.send(JSON.stringify({
-							type: "input_audio_buffer.clear"
-						}));
-					}, 100);
-							
+												
 					responseStartTimestampTwilio = null;
                     lastAssistantItem = null;
                     markQueue = [];
