@@ -228,6 +228,7 @@ fastify.register(async (fastify) => {
                 }
 
                 if (msg.type === 'response.audio.delta' && msg.delta) {
+					console.log("🔊 AUDIO CHUNK ARRIVATO", msg.delta.length);
                     conn.send(JSON.stringify({
                         event: 'media',
                         streamSid,
@@ -241,12 +242,16 @@ fastify.register(async (fastify) => {
                     if (msg.item_id) lastAssistantItem = msg.item_id;
                     sendMark();
                 }
-                
-                if (msg.type === 'response.done') {
-                    console.log('✅ Response completed');
-                    responseStartTimestampTwilio = null;
+				
+				if (msg.type === 'response.audio.done') {
+                    console.log('âœ… [AUDIO DONE] Full audio sent');
+					responseStartTimestampTwilio = null;
                     lastAssistantItem = null;
                     markQueue = [];
+				}
+                
+                if (msg.type === 'response.done') {
+                    console.log('✅ Response completed');   
                 }
 
                 if (msg.type === 'input_audio_buffer.speech_started') {
@@ -292,7 +297,8 @@ fastify.register(async (fastify) => {
 									response: {
 										modalities: ["audio", "text"],
 													voice: VOICE,
-													temperature: 0.8
+													temperature: 0.8,
+													output_audio_format: "g711_ulaw"
 									}
 								}));
 
