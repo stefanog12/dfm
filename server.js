@@ -261,9 +261,7 @@ fastify.register(async (fastify) => {
                             openAiWs.send(JSON.stringify({
                                 type: 'input_audio_buffer.commit'
                             }));
-                            openAiWs.send(JSON.stringify({
-                                type: 'response.create'
-                            }));
+                           
                         }
                     }, MAX_SPEECH_DURATION);
                 }
