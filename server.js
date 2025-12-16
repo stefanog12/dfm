@@ -253,10 +253,7 @@ fastify.register(async (fastify) => {
 				}
                 
                 if (msg.type === 'response.done') {
-                    console.log('✅ Response completed & Buffer clear');  
-                    openAiWs.send(JSON.stringify({
-						type: "input_audio_buffer.clear"
-					}));
+                    console.log('✅ Response completed');  
                 }
 
                 if (msg.type === 'input_audio_buffer.speech_started') {
@@ -292,6 +289,14 @@ fastify.register(async (fastify) => {
                     if (!ragApplied && userText && userText.trim().length > 5) {
                         console.log('🎯 First message - applying RAG');
                         await addRagContext(userText);
+						
+						setTimeout(() => {
+							// Clear SOLO qui per evitare interferenze con la risposta forzata
+							console.log('CLEAR BUFFER');
+							openAiWs.send(JSON.stringify({
+								type: "input_audio_buffer.clear"
+							}));
+						}
                         
                         // Forza una nuova risposta dopo aver aggiunto il RAG context
                         setTimeout(() => {
