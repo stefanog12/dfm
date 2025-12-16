@@ -249,7 +249,7 @@ fastify.register(async (fastify) => {
                     console.log('âœ… [AUDIO DONE] Full audio sent');
 					setTimeout(() => {
 							// Clear SOLO qui per evitare interferenze con la risposta forzata
-						console.log('CLEAR BUFFER II');
+						// console.log('CLEAR BUFFER II');
 						openAiWs.send(JSON.stringify({
 							type: "input_audio_buffer.clear"
 						}));
@@ -262,9 +262,7 @@ fastify.register(async (fastify) => {
                 
                 if (msg.type === 'response.done') {
                     console.log('✅ Response completed'); 
-					openAiWs.send(JSON.stringify({
-						type: "input_audio_buffer.start"
-					}));					
+					initializeSession(); // Initialize for further requests			
                 }
 
                 if (msg.type === 'input_audio_buffer.speech_started') {
