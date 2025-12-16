@@ -95,7 +95,9 @@ fastify.register(async (fastify) => {
                     }
                 }
             };
-			
+
+		
+				
             console.log('📤 Initializing session (ONCE)');
             openAiWs.send(JSON.stringify(sessionUpdate));
         };
@@ -251,7 +253,10 @@ fastify.register(async (fastify) => {
 				}
                 
                 if (msg.type === 'response.done') {
-                    console.log('✅ Response completed');   
+                    console.log('✅ Response completed & Buffer clear');  
+                    openAiWs.send(JSON.stringify({
+						type: "input_audio_buffer.clear"
+					}));
                 }
 
                 if (msg.type === 'input_audio_buffer.speech_started') {
