@@ -261,9 +261,7 @@ fastify.register(async (fastify) => {
                             openAiWs.send(JSON.stringify({
                                 type: 'input_audio_buffer.commit'
                             }));
-                            openAiWs.send(JSON.stringify({
-                                type: 'response.create'
-                            }));
+                            // NON creare la risposta qui - aspetta la trascrizione
                         }
                     }, MAX_SPEECH_DURATION);
                 }
@@ -275,17 +273,29 @@ fastify.register(async (fastify) => {
                         speechTimeout = null;
                     }
                 }
+                
+                if (msg.type === 'input_audio_buffer.committed') {
+                    console.log('✅ Audio buffer committed');
+                }
 
-                // Do RAG only on first user message
+                // Do RAG only on first user message, BEFORE response
                 if (msg.type === 'conversation.item.input_audio_transcription.completed') {
                     const userText = msg.transcript;
                     console.log('💬 User said:', userText);
                     
                     if (!ragApplied && userText && userText.trim().length > 5) {
-                        console.log('🎯 First message - applying RAG');
+                        console.log('🎯 First message - applying RAG before response');
                         await addRagContext(userText);
                         
-                       
+                        // Ora chiedi la risposta CON il RAG già applicato
+                        setTimeout(() => {
+                            if (openAiWs.readyState === WebSocket.OPEN) {
+                                console.log('🔄 Creating response with RAG context');
+                                openAiWs.send(JSON.stringify({
+                                    type: 'response.create'
+                                }));
+                            }
+                        }, 200);
                     }
                 }
                 
