@@ -129,30 +129,20 @@ fastify.register(async (fastify) => {
                 console.log('✨ [RAG] Adding context as conversation item');
                 
                 // Add RAG context as a system message in the conversation
-                // openAiWs.send(JSON.stringify({
-                //    type: 'conversation.item.create',
-                //    item: {
-                //        type: 'message',
-                //        role: 'system',
-                //        content: [
-                //            {
-                //                type: 'input_text',
-                //                text: `🎯 Adatta il tuo stile seguendo questi esempi di conversazioni passate:\n\n${ragContext}`
-                //            }
-                //        ]
-                //    }
-                // }));
+                openAiWs.send(JSON.stringify({
+                    type: 'conversation.item.create',
+                    item: {
+                        type: 'message',
+                        role: 'system',
+                        content: [
+                            {
+                                type: 'input_text',
+                                text: `🎯 Adatta il tuo stile seguendo questi esempi di conversazioni passate:\n\n${ragContext}`
+                            }
+                        ]
+                    }
+                }));
                 
-				// CAMBIA QUESTO: usa session.update invece di conversation.item.create
-				const newInstructions = BASE_SYSTEM_MESSAGE + `\n\n🎯 Adatta il tuo stile seguendo questi esempi:\n${ragContext}`;
-        
-				openAiWs.send(JSON.stringify({
-				type: 'session.update',
-					session: {
-					instructions: newInstructions
-					}
-				}));
-				
                 ragApplied = true;
                 console.log('✅ [RAG] Context added to conversation');
 				
@@ -311,18 +301,18 @@ fastify.register(async (fastify) => {
 							openAiWs.send(JSON.stringify({
 								type: "input_audio_buffer.clear"
 							}));
-                        
 						
+                        
 							// Forza una nuova risposta dopo aver aggiunto il RAG context
 							setTimeout(() => {
 								if (openAiWs.readyState === WebSocket.OPEN) {
-									console.log('🔄 Requesting response with RAG context for : ', conversation.item);
+									console.log('🔄 Requesting response with RAG context');
 									openAiWs.send(JSON.stringify({
 										type: "response.create",
-											response: {
-												modalities: ["audio", "text"],
-														voice: VOICE,
-														temperature: 0.8
+										response: {
+											modalities: ["audio", "text"],
+													voice: VOICE,
+													temperature: 0.8
 										}
 									}));
 
