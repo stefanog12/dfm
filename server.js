@@ -128,8 +128,6 @@ fastify.register(async (fastify) => {
 
             console.log('ðŸ‘‰ [SESSION UPDATE] re-Wake BASE VAD');
                         
-            lastSessionUpdateTime = Date.now(); // Track update time
-            
             try {
                 openAiWs.send(JSON.stringify(sessionUpdate));
             } catch (err) {
