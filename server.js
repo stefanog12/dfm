@@ -258,11 +258,7 @@ fastify.register(async (fastify) => {
                 
                 if (msg.type === 'response.done') {
                     console.log('✅ Response completed');
-// RIARMO VAD
-  openAiWs.send(JSON.stringify({
-    type: "input_audio_buffer.clear"
-  }));
-console.log("🎧 Ready for next user turn");	
+					console.log("🎧 Ready for next user turn");	
 				}
 
                 if (msg.type === 'input_audio_buffer.speech_started') {
