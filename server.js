@@ -127,10 +127,7 @@ fastify.register(async (fastify) => {
             };
 
             console.log('ðŸ‘‰ [SESSION UPDATE] re-Wake BASE VAD');
-            if (ragContext) {
-                console.log('ðŸ“š [RAG CONTEXT] Instructions include RAG context');
-            }
-            
+                        
             lastSessionUpdateTime = Date.now(); // Track update time
             
             try {
