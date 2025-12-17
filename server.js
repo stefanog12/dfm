@@ -104,7 +104,6 @@ fastify.register(async (fastify) => {
 		
 		// Update session for next question and wake VAD
         const WakeVADSession = () => {
-            const instructions = BASE_SYSTEM_MESSAGE + (ragContext ? `\n\nðŸŽ¯ Adatta il tuo stile seguendo questi esempi di conversazioni passate:\n${ragContext}` : "");
             
             const sessionUpdate = {
                 type: 'session.update',
@@ -118,7 +117,7 @@ fastify.register(async (fastify) => {
                     input_audio_format: 'g711_ulaw',
                     output_audio_format: 'g711_ulaw',
                     voice: VOICE,
-                    instructions: instructions,
+                    instructions: BASE_SYSTEM_MESSAGE,
                     modalities: ["text", "audio"],
                     temperature: 0.8,
                     input_audio_transcription: {
@@ -127,7 +126,7 @@ fastify.register(async (fastify) => {
                 }
             };
 
-            console.log('ðŸ‘‰ [SESSION UPDATE] re-Wake optimized VAD');
+            console.log('ðŸ‘‰ [SESSION UPDATE] re-Wake BASE VAD');
             if (ragContext) {
                 console.log('ðŸ“š [RAG CONTEXT] Instructions include RAG context');
             }
@@ -183,6 +182,7 @@ fastify.register(async (fastify) => {
                 
                 ragApplied = true;
                 console.log('✅ [RAG] Context added to conversation');
+				
                 
             } catch (err) {
                 console.error('❌ [RAG] Error:', err);
