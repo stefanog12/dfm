@@ -216,7 +216,7 @@ fastify.register(async (fastify) => {
                 const msg = JSON.parse(data);
                 
                 // 📊 Log ALL events to debug
-                console.log(`[OpenAI EVENT] ${msg.type}`);
+                console.log(`[OpenAI EVENT] ${msg.type} MSG = `, msg);
                 
                 // 🚨 Log detailed errors
                 if (msg.type === 'error') {
@@ -329,8 +329,7 @@ fastify.register(async (fastify) => {
         conn.on('message', (msg) => {
             try {
                 const data = JSON.parse(msg);
-				console.log('MSG = ', msg);
-                
+				                
                 switch (data.event) {
                     case 'media':
                         latestMediaTimestamp = data.media.timestamp;
