@@ -194,7 +194,7 @@ fastify.register(async (fastify) => {
         openAiWs.on('message', async (data) => {
             try {
                 const msg = JSON.parse(data);
-				console.log('MSG = ', msg);
+                console.log(`[OpenAI EVENT] ${msg.type}`);
 
                 // Send welcome message after session is ready
                 if (msg.type === 'session.updated' && !welcomeSent) {
