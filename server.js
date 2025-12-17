@@ -262,11 +262,7 @@ fastify.register(async (fastify) => {
   openAiWs.send(JSON.stringify({
     type: "input_audio_buffer.clear"
   }));
-
-  openAiWs.send(JSON.stringify({
-    type: "input_audio_buffer.commit"
-  }));
-	
+console.log("🎧 Ready for next user turn");	
 				}
 
                 if (msg.type === 'input_audio_buffer.speech_started') {
