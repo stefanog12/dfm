@@ -258,7 +258,7 @@ fastify.register(async (fastify) => {
                 
                 if (msg.type === 'response.done') {
                     console.log('✅ Response completed');
-					console.log("🎧 Ready for next user turn");	
+					console.log("🎧 Ready for next user turn");		
 				}
 
                 if (msg.type === 'input_audio_buffer.speech_started') {
@@ -295,12 +295,10 @@ fastify.register(async (fastify) => {
                         console.log('🎯 First message - applying RAG');
                         await addRagContext(userText);
 						
-						setTimeout(() => {
-							// Clear SOLO qui per evitare interferenze con la risposta forzata
-							console.log('CLEAR BUFFER');
-							openAiWs.send(JSON.stringify({
-								type: "input_audio_buffer.clear"
-							}));
+						// End the turn cleanly (even if empty) 
+						openAiWs.send(JSON.stringify({ 
+							type: "input_audio_buffer.commit" 
+						}));
 						
                         
 							// Forza una nuova risposta dopo aver aggiunto il RAG context
@@ -318,7 +316,7 @@ fastify.register(async (fastify) => {
 
 								}	
 							}, 300);
-						}, 300);
+						
                     }
                 }
                 
