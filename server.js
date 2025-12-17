@@ -79,9 +79,9 @@ fastify.register(async (fastify) => {
                 session: {
                     turn_detection: { 
                         type: 'server_vad',
-                        threshold: 0.5,
-                        prefix_padding_ms: 300,
-                        silence_duration_ms: 700
+                        threshold: 0.75,
+                        prefix_padding_ms: 200,
+                        silence_duration_ms: 400
                     },
                     input_audio_format: 'g711_ulaw',
                     output_audio_format: 'g711_ulaw',
@@ -258,7 +258,16 @@ fastify.register(async (fastify) => {
                 
                 if (msg.type === 'response.done') {
                     console.log('✅ Response completed');
-					console.log("🎧 Ready for next user turn");		
+					
+					openAiWs.send(JSON.stringify({
+  type: "input_audio_buffer.clear"
+}));
+
+openAiWs.send(JSON.stringify({
+  type: "input_audio_buffer.commit"
+}));
+
+				console.log("🎧 Ready for next user turn");		
 				}
 
                 if (msg.type === 'input_audio_buffer.speech_started') {
@@ -294,7 +303,8 @@ fastify.register(async (fastify) => {
                     if (!ragApplied && userText && userText.trim().length > 5) {
                         console.log('🎯 First message - applying RAG');
                         await addRagContext(userText);
-					                       
+						
+						                      
 							// Forza una nuova risposta dopo aver aggiunto il RAG context
 							setTimeout(() => {
 								if (openAiWs.readyState === WebSocket.OPEN) {
