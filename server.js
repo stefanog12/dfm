@@ -258,9 +258,20 @@ fastify.register(async (fastify) => {
                 
                 if (msg.type === 'response.done') {
                     console.log('✅ Response completed');
-openAiWs.send(JSON.stringify({
-    type: "conversation.reset"
-  }));					
+// 1. clear buffer
+  openAiWs.send(JSON.stringify({
+    type: "input_audio_buffer.clear"
+  }));
+
+  // 2. ri-armare il VAD
+  openAiWs.send(JSON.stringify({
+    type: "conversation.item.create",
+    item: {
+      type: "message",
+      role: "user",
+      content: []
+    }
+  }));							
 				}
 
                 if (msg.type === 'input_audio_buffer.speech_started') {
