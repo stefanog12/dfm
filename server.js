@@ -257,14 +257,11 @@ fastify.register(async (fastify) => {
 				}
                 
                 if (msg.type === 'response.done') {
-                    console.log('✅ Response completed'); 
-					openAiWs.send(JSON.stringify({
-						type: "session.update",
-							session: {
-							turn_detection: { type: "server_vad" }
-						}
-					}));
-                }
+                    console.log('✅ Response completed');
+openAiWs.send(JSON.stringify({
+    type: "conversation.reset"
+  }));					
+				}
 
                 if (msg.type === 'input_audio_buffer.speech_started') {
                     console.log('🎤 User speech detected');
