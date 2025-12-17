@@ -294,13 +294,7 @@ fastify.register(async (fastify) => {
                     if (!ragApplied && userText && userText.trim().length > 5) {
                         console.log('🎯 First message - applying RAG');
                         await addRagContext(userText);
-						
-						// End the turn cleanly (even if empty) 
-						openAiWs.send(JSON.stringify({ 
-							type: "input_audio_buffer.commit" 
-						}));
-						
-                        
+					                       
 							// Forza una nuova risposta dopo aver aggiunto il RAG context
 							setTimeout(() => {
 								if (openAiWs.readyState === WebSocket.OPEN) {
