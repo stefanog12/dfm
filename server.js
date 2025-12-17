@@ -258,7 +258,12 @@ fastify.register(async (fastify) => {
                 
                 if (msg.type === 'response.done') {
                     console.log('✅ Response completed'); 
-								
+					openAiWs.send(JSON.stringify({
+						type: "session.update",
+							session: {
+							turn_detection: { type: "server_vad" }
+						}
+					}));
                 }
 
                 if (msg.type === 'input_audio_buffer.speech_started') {
