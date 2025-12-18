@@ -361,6 +361,8 @@ fastify.register(async (fastify) => {
 						
 						 // Segno che c'è audio utente nuovo da quando abbiamo committato l'ultima volta
 						hasUserAudioSinceLastCommit = true;
+						console.log("TWILIO MEDIA", data.media.payload.length);
+
                         
                         if (openAiWs.readyState === WebSocket.OPEN) {
                             openAiWs.send(JSON.stringify({
