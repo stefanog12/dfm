@@ -60,12 +60,10 @@ fastify.register(async (fastify) => {
         let responseStartTimestampTwilio = null;
 		let hasUserAudioSinceLastCommit = false;  // True se è arrivato audio utente dopo l'ultimo commit
 		let userTurnOpen = false;                 // True se siamo in un turno utente (VAD ha rilevato speech_started)
-		
-		let ragApplied = false;
-		let ragPending = false;
-		let firstUserText = null;
-		let waitingForAssistantToFinish = false;
 
+        let responseActive = false;  // True quando c'è una response in corso
+
+        let ragApplied = false;
         let welcomeSent = false;
         
         let speechTimeout = null;
@@ -272,42 +270,18 @@ fastify.register(async (fastify) => {
                     lastAssistantItem = null;
                     markQueue = [];
 				}
+                
+				if (msg.type === 'response.created') {
+                    console.log('✅ Response created');
+					responseActive = true;		
+				}
 				
-				if (msg.type === 'response.done') {
-					console.log('✅ Response completed');
-					
-					// Se dobbiamo fare RAG, lo facciamo ORA
-					if (ragPending && !ragApplied && firstUserText) {
-							ragPending = false;
-							waitingForAssistantToFinish = false;
+                if (msg.type === 'response.done') {
+                    console.log('✅ Response completed');
+					console.log("🎧 Ready for next user turn");	
+					responseActive = false;					
+				}
 
-							console.log("🔍 Running RAG now...");
-							const ragText = firstUserText;
-							firstUserText = null;
-
-							// Esegui RAG
-							addRagContext(ragText).then(() => {
-								ragApplied = true;
-								console.log("✨ RAG context added");
-
-								// Ora possiamo creare la risposta con il RAG
-									openAiWs.send(JSON.stringify({
-										type: "response.create",
-										response: {
-											modalities: ["audio", "text"],
-											voice: VOICE,
-											temperature: 0.8
-										}
-									}));
-							});
-
-							return;
-					}				
-
-					console.log("🎧 Ready for next user turn");
-				}					
-
-            
 				if (msg.type === 'input_audio_buffer.speech_started') {
 					console.log('🎤 User speech detected');
 					userTurnOpen = true;
@@ -352,16 +326,38 @@ fastify.register(async (fastify) => {
 
                 // Do RAG only on first user message
                 if (msg.type === 'conversation.item.input_audio_transcription.completed') {
-					const userText = msg.transcript;
-					console.log("💬 User said:", userText);
+    const userText = msg.transcript;
+    console.log('💬 User said:', userText);
 
-					// Primo turno → salva testo e prepara RAG
-					if (!ragApplied && userText && userText.trim().length > 5) {
-						firstUserText = userText;
-						ragPending = true;
-						console.log("🎯 RAG pending after assistant finishes");
-					}		
-				}
+    // SOLO primo turno: fai RAG e crea la risposta
+    if (!ragApplied && userText && userText.trim().length > 5) {
+        console.log('🎯 First message - applying RAG');
+        await addRagContext(userText);
+        ragApplied = true;
+
+        setTimeout(() => {
+            if (openAiWs.readyState === WebSocket.OPEN) {
+                if (responseActive) {
+                    console.log('⚠️ response.create skipped: response already active');
+                    return;
+                }
+
+                console.log('🔄 Requesting response with RAG context');
+                openAiWs.send(JSON.stringify({
+                    type: "response.create",
+                    response: {
+                        modalities: ["audio", "text"],
+                        voice: VOICE,
+                        temperature: 0.8
+                    }
+                }));
+            }
+        }, 300);
+    }
+
+    // Turni successivi: NIENTE RAG, nessun response.create manuale qui
+}
+
                 
             } catch (err) {
                 console.error('Error parsing OpenAI message:', err);
@@ -378,7 +374,7 @@ fastify.register(async (fastify) => {
 						
 						 // Segno che c'è audio utente nuovo da quando abbiamo committato l'ultima volta
 						hasUserAudioSinceLastCommit = true;
-						console.log("TWILIO MEDIA", data.media.payload.length);
+						// console.log("TWILIO MEDIA", data.media.payload.length);
 
                         
                         if (openAiWs.readyState === WebSocket.OPEN) {
