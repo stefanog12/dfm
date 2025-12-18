@@ -66,9 +66,6 @@ fastify.register(async (fastify) => {
 		let firstUserText = null;
 		let waitingForAssistantToFinish = false;
 
-
-        
-        let ragApplied = false;
         let welcomeSent = false;
         
         let speechTimeout = null;
