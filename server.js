@@ -82,9 +82,9 @@ fastify.register(async (fastify) => {
                 session: {
                     turn_detection: { 
                         type: 'server_vad',
-                        threshold: 0.75,
+                        threshold: 0.55,
                         prefix_padding_ms: 200,
-                        silence_duration_ms: 400
+                        silence_duration_ms: 500
                     },
                     input_audio_format: 'g711_ulaw',
                     output_audio_format: 'g711_ulaw',
