@@ -58,6 +58,9 @@ fastify.register(async (fastify) => {
         let lastAssistantItem = null;
         let markQueue = [];
         let responseStartTimestampTwilio = null;
+		let hasUserAudioSinceLastCommit = false;  // True se è arrivato audio utente dopo l'ultimo commit
+		let userTurnOpen = false;                 // True se siamo in un turno utente (VAD ha rilevato speech_started)
+
         
         let ragApplied = false;
         let welcomeSent = false;
@@ -152,30 +155,41 @@ fastify.register(async (fastify) => {
             }
         }
 
-        const handleSpeechStarted = () => {
-            console.log('🎤 User started speaking');
-            
-            if (markQueue.length > 0 && responseStartTimestampTwilio != null) {
-                const elapsedTime = latestMediaTimestamp - responseStartTimestampTwilio;
-                console.log(`⏱️ Interrupting assistant at ${elapsedTime}ms`);
-                
-                if (lastAssistantItem) {
-                    openAiWs.send(JSON.stringify({
-                        type: 'conversation.item.truncate',
-                        item_id: lastAssistantItem,
-                        content_index: 0,
-                        audio_end_ms: elapsedTime
-                    }));
-                }
-                
-                conn.send(JSON.stringify({ event: 'clear', streamSid }));
-                markQueue = [];
-                lastAssistantItem = null;
-                responseStartTimestampTwilio = null;
-            }
-        };
+		const MIN_TIME_BEFORE_INTERRUPT_MS = 700; // evita di interrompere per rumore immediato
 
-        const sendMark = () => {
+		const handleSpeechStarted = () => {
+			console.log('🎤 User started speaking');
+    
+			// Se non c'è una risposta in corso, non interrompere nulla
+			if (markQueue.length === 0 || responseStartTimestampTwilio == null) {
+				return;
+			}
+
+			const elapsedTime = latestMediaTimestamp - responseStartTimestampTwilio;
+			if (elapsedTime < MIN_TIME_BEFORE_INTERRUPT_MS) {
+				console.log(`⚠️ Ignoro speech_start precoce a ${elapsedTime}ms`);
+				return;
+			}
+
+			console.log(`⏱️ Interrupting assistant at ${elapsedTime}ms`);
+                
+			if (lastAssistantItem) {
+				openAiWs.send(JSON.stringify({
+					type: 'conversation.item.truncate',
+					item_id: lastAssistantItem,
+					content_index: 0,
+					audio_end_ms: elapsedTime
+				}));
+			}
+                
+			conn.send(JSON.stringify({ event: 'clear', streamSid }));
+			markQueue = [];
+			lastAssistantItem = null;
+			responseStartTimestampTwilio = null;
+		};
+       
+
+	    const sendMark = () => {
             if (streamSid) {
                 conn.send(JSON.stringify({
                     event: 'mark',
@@ -258,42 +272,50 @@ fastify.register(async (fastify) => {
                 
                 if (msg.type === 'response.done') {
                     console.log('✅ Response completed');
-					
-					openAiWs.send(JSON.stringify({
-  type: "input_audio_buffer.clear"
-}));
-
-openAiWs.send(JSON.stringify({
-  type: "input_audio_buffer.commit"
-}));
-
-				console.log("🎧 Ready for next user turn");		
+					console.log("🎧 Ready for next user turn");		
 				}
 
-                if (msg.type === 'input_audio_buffer.speech_started') {
-                    console.log('🎤 User speech detected');
-                    handleSpeechStarted();
-                    
-                    // Timeout di sicurezza: forza commit dopo 8 secondi
-                    if (speechTimeout) clearTimeout(speechTimeout);
-                    speechTimeout = setTimeout(() => {
-                        console.warn('⏰ [TIMEOUT] Forcing speech_stopped after 8s');
-                        if (openAiWs.readyState === WebSocket.OPEN) {
-                            openAiWs.send(JSON.stringify({
-                                type: 'input_audio_buffer.commit'
-                            }));
-                           
-                        }
-                    }, MAX_SPEECH_DURATION);
-                }
-                
+				if (msg.type === 'input_audio_buffer.speech_started') {
+					console.log('🎤 User speech detected');
+					userTurnOpen = true;
+					handleSpeechStarted();
+    
+					if (speechTimeout) clearTimeout(speechTimeout);
+						speechTimeout = setTimeout(() => {
+							console.warn('⏰ [TIMEOUT] Forcing speech_stopped after 8s');
+							if (openAiWs.readyState === WebSocket.OPEN && hasUserAudioSinceLastCommit) {
+								openAiWs.send(JSON.stringify({
+									type: 'input_audio_buffer.commit'
+								}));
+								hasUserAudioSinceLastCommit = false;
+								userTurnOpen = false;
+							} else {
+							console.log('⚠️ Timeout: nessun audio utente da committare, salto il commit');
+							}
+						}, MAX_SPEECH_DURATION);
+					}
+
+                               
                 if (msg.type === 'input_audio_buffer.speech_stopped') {
-                    console.log('🛑 Speech stopped detected');
-                    if (speechTimeout) {
-                        clearTimeout(speechTimeout);
-                        speechTimeout = null;
-                    }
-                }
+					console.log('🛑 Speech stopped detected');
+
+					if (speechTimeout) {
+					clearTimeout(speechTimeout);
+					speechTimeout = null;
+					}
+
+					// Se c'è audio utente nel buffer, committiamo subito (turno naturale)
+					if (openAiWs.readyState === WebSocket.OPEN && hasUserAudioSinceLastCommit) {
+						openAiWs.send(JSON.stringify({
+							type: 'input_audio_buffer.commit'
+						}));
+						hasUserAudioSinceLastCommit = false;
+						userTurnOpen = false;
+					} else {
+						console.log('⚠️ speech_stopped ma buffer vuoto, non faccio commit');
+					}
+				}			
+
 
                 // Do RAG only on first user message
                 if (msg.type === 'conversation.item.input_audio_transcription.completed') {
@@ -336,6 +358,9 @@ openAiWs.send(JSON.stringify({
                 switch (data.event) {
                     case 'media':
                         latestMediaTimestamp = data.media.timestamp;
+						
+						 // Segno che c'è audio utente nuovo da quando abbiamo committato l'ultima volta
+						hasUserAudioSinceLastCommit = true;
                         
                         if (openAiWs.readyState === WebSocket.OPEN) {
                             openAiWs.send(JSON.stringify({
