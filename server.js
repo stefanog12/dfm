@@ -279,7 +279,11 @@ fastify.register(async (fastify) => {
                 if (msg.type === 'response.done') {
                     console.log('✅ Response completed');
 					console.log("🎧 Ready for next user turn");	
-					responseActive = false;					
+					responseActive = false;	
+
+					// AGGIUNGI QUESTO: Reset completo dello stato
+					hasUserAudioSinceLastCommit = false;
+					userTurnOpen = false;		
 				}
 
 				if (msg.type === 'input_audio_buffer.speech_started') {
