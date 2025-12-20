@@ -283,7 +283,15 @@ fastify.register(async (fastify) => {
 
 					// AGGIUNGI QUESTO: Reset completo dello stato
 					hasUserAudioSinceLastCommit = false;
-					userTurnOpen = false;		
+					userTurnOpen = false;	
+
+					 setTimeout(() => {
+    console.log('🧹 Clearing input audio buffer (delayed)');
+    openAiWs.send(JSON.stringify({
+      type: 'input_audio_buffer.clear'
+    }));
+  }, 800); // ← 500–1000 ms è il valore giusto
+					
 				}
 
 				if (msg.type === 'input_audio_buffer.speech_started') {
