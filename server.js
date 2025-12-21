@@ -70,7 +70,7 @@ fastify.register(async (fastify) => {
                     turn_detection: { type: 'server_vad' },
 					threshold: 0.55,
                     prefix_padding_ms: 200,
-                    silence_duration_ms: 500
+                    silence_duration_ms: 500,
                     input_audio_format: 'g711_ulaw',    // IMPORTANT: Twilio sends PCMU
                     output_audio_format: 'g711_ulaw',   // Match PCMU output
                     voice: VOICE,
