@@ -50,8 +50,12 @@ fastify.register(async (fastify) => {
         let lastAssistantItem = null;
         let markQueue = [];
         let responseStartTimestampTwilio = null;
+		
+		let speechTimeout = null;
+        const MAX_SPEECH_DURATION = 8000; // 8 secondi
+		
 
-        const openAiWs = new WebSocket("wss://api.openai.com/v1/realtime?model=gpt-realtime", {
+        const openAiWs = new WebSocket('wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview', {
             headers: {
                 Authorization: `Bearer ${OPENAI_API_KEY}`,
                 'OpenAI-Beta': 'realtime=v1'
@@ -64,6 +68,9 @@ fastify.register(async (fastify) => {
                 type: 'session.update',
                 session: {
                     turn_detection: { type: 'server_vad' },
+					threshold: 0.55,
+                    prefix_padding_ms: 200,
+                    silence_duration_ms: 500
                     input_audio_format: 'g711_ulaw',    // IMPORTANT: Twilio sends PCMU
                     output_audio_format: 'g711_ulaw',   // Match PCMU output
                     voice: VOICE,
@@ -72,10 +79,7 @@ fastify.register(async (fastify) => {
                     temperature: 0.8,
                 }
             };
-
-            // console.log('ðŸ‘‰ Sending session update:', JSON.stringify(sessionUpdate));
-           // openAiWs.send(JSON.stringify(sessionUpdate));
-
+			
             console.log('ðŸ‘‰ [SESSION INIT] Sending session update:', JSON.stringify(sessionUpdate, null, 2));
             try {
                 openAiWs.send(JSON.stringify(sessionUpdate));
@@ -84,12 +88,16 @@ fastify.register(async (fastify) => {
             }
         };
 
+		const MIN_TIME_BEFORE_INTERRUPT_MS = 700; // evita di interrompere per rumore immediato
+		
         const handleSpeechStartedEvent = () => {
             console.log('ðŸ”Š Speech started detected from OpenAI');
-            if (markQueue.length > 0 && responseStartTimestampTwilio != null) {
+			
+			if (markQueue.length > 0 && responseStartTimestampTwilio != null) {
                 const elapsedTime = latestMediaTimestamp - responseStartTimestampTwilio;
                 console.log(`â±ï¸ Truncating last assistant item at ${elapsedTime} ms`);
                 if (lastAssistantItem) {
+					console.log('ðŸ”Š Speech truncated!!');
                     openAiWs.send(JSON.stringify({
                         type: 'conversation.item.truncate',
                         item_id: lastAssistantItem,
@@ -151,6 +159,20 @@ fastify.register(async (fastify) => {
 
                 if (msg.type === 'input_audio_buffer.speech_started') {
                     handleSpeechStartedEvent();
+					
+					if (speechTimeout) clearTimeout(speechTimeout);
+						speechTimeout = setTimeout(() => {
+							console.warn('? [TIMEOUT] Forcing speech_stopped after 8s');
+							if (openAiWs.readyState === WebSocket.OPEN && hasUserAudioSinceLastCommit) {
+								openAiWs.send(JSON.stringify({
+									type: 'input_audio_buffer.commit'
+								}));
+								hasUserAudioSinceLastCommit = false;
+								userTurnOpen = false;
+							} else {
+							console.log('?? Timeout: nessun audio utente da committare, salto il commit');
+							}
+						}, MAX_SPEECH_DURATION);
                 }
             } catch (err) {
                 console.error('Errore parsing da OpenAI:', err);
