@@ -107,55 +107,7 @@ fastify.register(async (fastify) => {
         };
 		
 		
-        // Add RAG context as a conversation item (system message)
-        async function addRagContext(userText) {
-            try {
-                console.log('🔍 [RAG] Searching for:', userText);
-                
-                const embeddingResponse = await openaiClient.embeddings.create({
-                    model: "text-embedding-3-small",
-                    input: userText
-                });
-
-                const queryEmbedding = embeddingResponse.data[0].embedding;
-                const results = await searchMemory(queryEmbedding, 3);
-                
-                console.log('📊 [RAG] Found', results.length, 'similar conversations');
-                results.forEach((r, idx) => {
-                    console.log(`   ${idx + 1}. ${r.id} (score: ${r.score.toFixed(4)})`);
-                });
-
-                const ragContext = results.map((r, idx) => {
-                    const preview = r.text.substring(0, 300);
-                    return `Esempio ${idx + 1}: ${preview}`;
-                }).join('\n\n');
-
-                console.log('✨ [RAG] Adding context as conversation item');
-                
-                // Add RAG context as a system message in the conversation
-                openAiWs.send(JSON.stringify({
-                    type: 'conversation.item.create',
-                    item: {
-                        type: 'message',
-                        role: 'system',
-                        content: [
-                            {
-                                type: 'input_text',
-                                text: `🎯 Adatta il tuo stile seguendo questi esempi di conversazioni passate:\n\n${ragContext}`
-                            }
-                        ]
-                    }
-                }));
-                
-                ragApplied = true;
-                console.log('✅ [RAG] Context added to conversation');
-				
-                
-            } catch (err) {
-                console.error('❌ [RAG] Error:', err);
-            }
-        }
-
+  
 		const MIN_TIME_BEFORE_INTERRUPT_MS = 700; // evita di interrompere per rumore immediato
 
 		const handleSpeechStarted = () => {
@@ -279,19 +231,12 @@ fastify.register(async (fastify) => {
                 if (msg.type === 'response.done') {
                     console.log('✅ Response completed');
 					console.log("🎧 Ready for next user turn");	
-					responseActive = false;	
+					responseActive = false;			
 
 					// AGGIUNGI QUESTO: Reset completo dello stato
 					hasUserAudioSinceLastCommit = false;
-					userTurnOpen = false;	
-
-					 setTimeout(() => {
-    console.log('🧹 NOT Clearing input audio buffer - (delay only)');
-  //  openAiWs.send(JSON.stringify({
-     // type: 'input_audio_buffer.clear'
-  //  }));
-  }, 800); // ← 500–1000 ms è il valore giusto
-					
+					userTurnOpen = false;
+				
 				}
 
 				if (msg.type === 'input_audio_buffer.speech_started') {
@@ -344,9 +289,7 @@ fastify.register(async (fastify) => {
     // SOLO primo turno: fai RAG e crea la risposta
     if (!ragApplied && userText && userText.trim().length > 5) {
         console.log('🎯 First message - applying RAG');
-        await addRagContext(userText);
-        ragApplied = true;
-
+        
         setTimeout(() => {
             if (openAiWs.readyState === WebSocket.OPEN) {
                 if (responseActive) {
@@ -386,7 +329,7 @@ fastify.register(async (fastify) => {
 						
 						 // Segno che c'è audio utente nuovo da quando abbiamo committato l'ultima volta
 						hasUserAudioSinceLastCommit = true;
-						// console.log("TWILIO MEDIA", data.media.payload.length);
+						console.log("TWILIO MEDIA", data.media.payload.length);
 
                         
                         if (openAiWs.readyState === WebSocket.OPEN) {
