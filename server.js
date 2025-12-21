@@ -286,10 +286,10 @@ fastify.register(async (fastify) => {
 					userTurnOpen = false;	
 
 					 setTimeout(() => {
-    console.log('🧹 Clearing input audio buffer (delayed)');
-    openAiWs.send(JSON.stringify({
-      type: 'input_audio_buffer.clear'
-    }));
+    console.log('🧹 NOT Clearing input audio buffer - (delay only)');
+  //  openAiWs.send(JSON.stringify({
+     // type: 'input_audio_buffer.clear'
+  //  }));
   }, 800); // ← 500–1000 ms è il valore giusto
 					
 				}
