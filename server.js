@@ -144,8 +144,9 @@ fastify.register(async (fastify) => {
 				
 				// Reinvia session.update dopo session.created
 				if (msg.type === "session.created") {
-						console.log("?? Re-sending session.update after session.created");
-						openAiWs.send(JSON.stringify({
+						setTimeout(() => {
+						console.log("+2 secondi : Re-sending session.update after session.created");
+							openAiWs.send(JSON.stringify({
 								type: "session.update",
 								session: {
 										turn_detection: { 
@@ -161,7 +162,8 @@ fastify.register(async (fastify) => {
 										modalities: ["text", "audio"],
 										temperature: 0.8
 								}
-						}));
+							}));
+						}, 2000); // 2 secondi
 				}
 
                 if (msg.type === 'response.audio.delta' && msg.delta) {
