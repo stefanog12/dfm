@@ -22,7 +22,7 @@ const BASE_SYSTEM_MESSAGE = 'You are a friendly and concise AI voice assistant. 
 const VOICE = 'alloy';
 const PORT = process.env.PORT || 3000;
 
-const LOG_EVENT_TYPES = [ 'error', 'response.content.done', 'rate_limits.updated', 'response.done', 'input_audio_buffer.committed', 'input_audio_buffer.speech_stopped', 'input_audio_buffer.speech_started', 'session.created' ];
+const LOG_EVENT_TYPES = [ 'error', 'response.content.done', 'rate_limits.updated', 'response.done', 'input_audio_buffer.committed', 'input_audio_buffer.speech_stopped', 'input_audio_buffer.speech_started', 'session.created', 'session.updated' ];
 const SHOW_TIMING_MATH = false;
 
 fastify.get('/', async (req, reply) => {
@@ -141,8 +141,7 @@ fastify.register(async (fastify) => {
                     console.log(`[OpenAI EVENT] ${msg.type}`, JSON.stringify(msg, null, 2));
                 }
 				
-				
-				// Reinvia session.update dopo session.created
+// Reinvia session.update dopo session.created
 				if (msg.type === "session.created") {
 						setTimeout(() => {
 						console.log("+2 secondi : Re-sending session.update after session.created");
@@ -160,11 +159,18 @@ fastify.register(async (fastify) => {
 										voice: "alloy",
 										instructions: BASE_SYSTEM_MESSAGE,
 										modalities: ["text", "audio"],
-										temperature: 0.8
+										temperature: 0.8,
+										// ?? QUESTA È LA CHIAVE 
+										include: ["session"]
 								}
 							}));
-						}, 2000); // 2 secondi
+						}, 10000); // 10 secondi
 				}
+
+				if (msg.type === "session.updated") {
+					console.log("? SESSION UPDATED RECEIVED:");
+					console.log(JSON.stringify(msg.session, null, 2));
+				}				
 
                 if (msg.type === 'response.audio.delta' && msg.delta) {
                      console.log('ðŸ”Š [AUDIO DELTA] Sending audio chunk to Twilio');
