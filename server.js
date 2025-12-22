@@ -79,8 +79,7 @@ fastify.register(async (fastify) => {
                     voice: VOICE,
                     instructions: BASE_SYSTEM_MESSAGE,
                     modalities: ["text", "audio"],
-					temperature: 0.8,
-					include: ["session"]
+					temperature: 0.8
                 }
             };
 			
