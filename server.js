@@ -71,15 +71,16 @@ fastify.register(async (fastify) => {
                         type: 'server_vad',
                         threshold: 0.75,
                         prefix_padding_ms: 200,
-                        silence_duration_ms: 700
+                        silence_duration_ms: 700,
+						interrupt_response: false 
                     },
                     input_audio_format: 'g711_ulaw',    // IMPORTANT: Twilio sends PCMU
                     output_audio_format: 'g711_ulaw',   // Match PCMU output
                     voice: VOICE,
                     instructions: BASE_SYSTEM_MESSAGE,
                     modalities: ["text", "audio"],
-					"interrupt_response": false,
-                    temperature: 0.8
+					temperature: 0.8,
+					include: ["session"]
                 }
             };
 			
