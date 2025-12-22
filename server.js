@@ -71,13 +71,14 @@ fastify.register(async (fastify) => {
                         type: 'server_vad',
                         threshold: 0.75,
                         prefix_padding_ms: 200,
-                        silence_duration_ms: 300
+                        silence_duration_ms: 700
                     },
                     input_audio_format: 'g711_ulaw',    // IMPORTANT: Twilio sends PCMU
                     output_audio_format: 'g711_ulaw',   // Match PCMU output
                     voice: VOICE,
                     instructions: BASE_SYSTEM_MESSAGE,
                     modalities: ["text", "audio"],
+					"interrupt_response": false,
                     temperature: 0.8
                 }
             };
@@ -141,7 +142,8 @@ fastify.register(async (fastify) => {
                     console.log(`[OpenAI EVENT] ${msg.type}`, JSON.stringify(msg, null, 2));
                 }
 				
-// Reinvia session.update dopo session.created
+				
+				// Reinvia session.update dopo session.created
 				if (msg.type === "session.created") {
 					console.log("? SESSION CREATED RECEIVED");	
 				}
@@ -149,7 +151,7 @@ fastify.register(async (fastify) => {
 				if (msg.type === "session.updated") {
 					console.log("? SESSION UPDATED RECEIVED:");
 					console.log(JSON.stringify(msg.session, null, 2));
-				}				
+				}
 
                 if (msg.type === 'response.audio.delta' && msg.delta) {
                      console.log('ðŸ”Š [AUDIO DELTA] Sending audio chunk to Twilio');
@@ -177,7 +179,7 @@ fastify.register(async (fastify) => {
 							console.warn('? [TIMEOUT] Forcing speech_stopped after 8s');
 							if (openAiWs.readyState === WebSocket.OPEN) {
 								openAiWs.send(JSON.stringify({
-									type: 'input_audio_buffer.stop'
+									type: 'input_audio_buffer.commit'
 								}));
 								
 							} else {
