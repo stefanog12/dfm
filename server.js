@@ -177,7 +177,7 @@ fastify.register(async (fastify) => {
 							console.warn('? [TIMEOUT] Forcing speech_stopped after 8s');
 							if (openAiWs.readyState === WebSocket.OPEN) {
 								openAiWs.send(JSON.stringify({
-									type: 'input_audio_buffer.commit'
+									type: 'input_audio_buffer.stop'
 								}));
 								
 							} else {
