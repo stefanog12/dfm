@@ -165,12 +165,11 @@ fastify.register(async (fastify) => {
 					if (speechTimeout) clearTimeout(speechTimeout);
 						speechTimeout = setTimeout(() => {
 							console.warn('? [TIMEOUT] Forcing speech_stopped after 8s');
-							if (openAiWs.readyState === WebSocket.OPEN && hasUserAudioSinceLastCommit) {
+							if (openAiWs.readyState === WebSocket.OPEN) {
 								openAiWs.send(JSON.stringify({
 									type: 'input_audio_buffer.commit'
 								}));
-								hasUserAudioSinceLastCommit = false;
-								userTurnOpen = false;
+								
 							} else {
 							console.log('?? Timeout: nessun audio utente da committare, salto il commit');
 							}
