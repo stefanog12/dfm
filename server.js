@@ -133,7 +133,7 @@ fastify.register(async (fastify) => {
         });
 
         openAiWs.on('message', (data) => {
-           // console.log('ðŸ“© [FROM OPENAI] Message received ${msg.type}');
+            
             try {
                 const msg = JSON.parse(data);
                 if (LOG_EVENT_TYPES.includes(msg.type)) {
