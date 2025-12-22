@@ -76,7 +76,7 @@ fastify.register(async (fastify) => {
                     input_audio_format: 'g711_ulaw',    // IMPORTANT: Twilio sends PCMU
                     output_audio_format: 'g711_ulaw',   // Match PCMU output
                     voice: VOICE,
-                    instructions: SYSTEM_MESSAGE,
+                    instructions: BASE_SYSTEM_MESSAGE,
                     modalities: ["text", "audio"],
                     temperature: 0.8
                 }
