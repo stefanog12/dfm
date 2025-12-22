@@ -133,13 +133,36 @@ fastify.register(async (fastify) => {
         });
 
         openAiWs.on('message', (data) => {
-            console.log('ðŸ“© [FROM OPENAI] Message received');
+            console.log('ðŸ“© [FROM OPENAI] Message received ${msg.type}');
             try {
                 const msg = JSON.parse(data);
                 if (LOG_EVENT_TYPES.includes(msg.type)) {
                    // console.log(`[OpenAI] ${msg.type}`, msg);
                     console.log(`[OpenAI EVENT] ${msg.type}`, JSON.stringify(msg, null, 2));
                 }
+				
+				
+				// Reinvia session.update dopo session.created
+				if (msg.type === "session.created") {
+						console.log("?? Re-sending session.update after session.created");
+						openAiWs.send(JSON.stringify({
+								type: "session.update",
+								session: {
+										turn_detection: { 
+											type: "server_vad",
+											threshold: 0.75,
+											prefix_padding_ms: 200,
+											silence_duration_ms: 500
+										},
+										input_audio_format: "g711_ulaw",
+										output_audio_format: "g711_ulaw",
+										voice: "alloy",
+										instructions: BASE_SYSTEM_MESSAGE,
+										modalities: ["text", "audio"],
+										temperature: 0.8
+								}
+						}));
+				}
 
                 if (msg.type === 'response.audio.delta' && msg.delta) {
                      console.log('ðŸ”Š [AUDIO DELTA] Sending audio chunk to Twilio');
