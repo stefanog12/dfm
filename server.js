@@ -129,22 +129,6 @@ fastify.register(async (fastify) => {
             }
         };
 
-// ------------------------------
-//  ANTI-ECHO + ENERGY GATE
-// ------------------------------
-
-let ignoreAudioUntil = 0;
-
-// Calcolo energia µ-law (0–255)
-function ulawEnergy(base64) {
-    const buf = Buffer.from(base64, 'base64');
-    let sum = 0;
-    for (let i = 0; i < buf.length; i++) {
-        sum += Math.abs(buf[i] - 128);
-    }
-    return sum / buf.length;
-}
-		
         openAiWs.on('open', () => {
 			console.log('ðŸ§  Connessione OpenAI attiva');
             // console.log('ðŸ§  OpenAI WebSocket connection opened (readyState:', openAiWs.readyState, ')');
@@ -262,11 +246,6 @@ function ulawEnergy(base64) {
                         // console.log(`ðŸŽ™ï¸ [MEDIA] Timestamp: ${latestMediaTimestamp}`);
                         if (openAiWs.readyState === WebSocket.OPEN) {
                          //   console.log('âž¡ï¸ Sending audio to OpenAI (buffer.append)');
-						 
-// Energy gate
-const energy = ulawEnergy(msg.media.payload);
-if (energy < 5) return; // silenzio ? non appendere
-		
                             openAiWs.send(JSON.stringify({
                                 type: 'input_audio_buffer.append',
                                 audio: data.media.payload
