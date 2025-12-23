@@ -155,7 +155,26 @@ fastify.register(async (fastify) => {
 					console.log("SESSION UPDATED RECEIVED:");
 					// console.log(JSON.stringify(msg.session, null, 2));
 				}
-
+				
+				// VAD ha ricevuto commit
+				if (msg.type === "input_audio_buffer.committed") {
+					console.log("INPUT COMMITTED - START RESPONSE????");
+					console.log('?? Requesting response without RAG context');
+					openAiWs.send(JSON.stringify({
+						type: "response.create",
+						response: {
+							modalities: ["audio", "text"],
+							voice: VOICE,
+							temperature: 0.8
+						}
+					}));					
+				}
+				
+				f (msg.type === "reposnse.created") {
+					console.log("response created");
+					//console.log(JSON.stringify(msg.session, null, 2));
+				}
+				
                 if (msg.type === 'response.audio.delta' && msg.delta) {
                     // console.log('ðŸ”Š [AUDIO DELTA] Sending audio chunk to Twilio');
                     conn.send(JSON.stringify({
