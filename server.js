@@ -119,7 +119,7 @@ fastify.register(async (fastify) => {
 
         const sendMark = () => {
             if (streamSid) {
-                console.log('âœ… Sending mark to Twilio');
+                // console.log('âœ… Sending mark to Twilio');
                 conn.send(JSON.stringify({
                     event: 'mark',
                     streamSid,
@@ -129,6 +129,22 @@ fastify.register(async (fastify) => {
             }
         };
 
+// ------------------------------
+//  ANTI-ECHO + ENERGY GATE
+// ------------------------------
+
+let ignoreAudioUntil = 0;
+
+// Calcolo energia µ-law (0–255)
+function ulawEnergy(base64) {
+    const buf = Buffer.from(base64, 'base64');
+    let sum = 0;
+    for (let i = 0; i < buf.length; i++) {
+        sum += Math.abs(buf[i] - 128);
+    }
+    return sum / buf.length;
+}
+		
         openAiWs.on('open', () => {
 			console.log('ðŸ§  Connessione OpenAI attiva');
             // console.log('ðŸ§  OpenAI WebSocket connection opened (readyState:', openAiWs.readyState, ')');
@@ -170,8 +186,8 @@ fastify.register(async (fastify) => {
 					}));					
 				}
 				
-				if (msg.type === "reposnse.created") {
-					console.log("response created");
+				if (msg.type === "response.created") {
+					console.log("RESPONSE CREATED");
 					//console.log(JSON.stringify(msg.session, null, 2));
 				}
 				
@@ -209,6 +225,27 @@ fastify.register(async (fastify) => {
 							}
 						}, MAX_SPEECH_DURATION);
                 }
+				
+				if (msg.type === 'input_audio_buffer.speech_stopped') {
+					console.log("?? SPEECH STOPPED");
+
+					if (speechTimeout) {
+					clearTimeout(speechTimeout);
+					speechTimeout = null;
+					}
+
+					// Se c'è audio utente nel buffer, committiamo subito (turno naturale)
+					if (openAiWs.readyState === WebSocket.OPEN {
+						openAiWs.send(JSON.stringify({
+							type: 'input_audio_buffer.commit'
+						}));
+						hasUserAudioSinceLastCommit = false;
+						userTurnOpen = false;
+					} else {
+						console.log('?? speech_stopped ma buffer vuoto, non faccio commit');
+					}
+				}
+				
             } catch (err) {
                 console.error('Errore parsing da OpenAI:', err);
             }
@@ -225,6 +262,11 @@ fastify.register(async (fastify) => {
                         // console.log(`ðŸŽ™ï¸ [MEDIA] Timestamp: ${latestMediaTimestamp}`);
                         if (openAiWs.readyState === WebSocket.OPEN) {
                          //   console.log('âž¡ï¸ Sending audio to OpenAI (buffer.append)');
+						 
+// Energy gate
+const energy = ulawEnergy(msg.media.payload);
+if (energy < 5) return; // silenzio ? non appendere
+		
                             openAiWs.send(JSON.stringify({
                                 type: 'input_audio_buffer.append',
                                 audio: data.media.payload
@@ -238,7 +280,7 @@ fastify.register(async (fastify) => {
                         console.log('ðŸš€ Stream started. SID:', streamSid);
                         break;
                     case 'mark':
-                        console.log('âœ… [MARK] Acknowledged by Twilio');
+                        // console.log('âœ… [MARK] Acknowledged by Twilio');
                         if (markQueue.length > 0) markQueue.shift();
                         break;
                     default:
