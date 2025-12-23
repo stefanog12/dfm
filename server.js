@@ -235,7 +235,7 @@ function ulawEnergy(base64) {
 					}
 
 					// Se c'è audio utente nel buffer, committiamo subito (turno naturale)
-					if (openAiWs.readyState === WebSocket.OPEN {
+					if (openAiWs.readyState === WebSocket.OPEN) {
 						openAiWs.send(JSON.stringify({
 							type: 'input_audio_buffer.commit'
 						}));
