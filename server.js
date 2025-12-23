@@ -69,9 +69,9 @@ fastify.register(async (fastify) => {
                 session: {
                     turn_detection: { 
                         type: 'server_vad',
-                        threshold: 0.75,
+                        threshold: 0.55,
                         prefix_padding_ms: 200,
-                        silence_duration_ms: 700,
+                        silence_duration_ms: 300,
 						interrupt_response: false 
                     },
                     input_audio_format: 'g711_ulaw',    // IMPORTANT: Twilio sends PCMU
@@ -83,7 +83,9 @@ fastify.register(async (fastify) => {
                 }
             };
 			
-            console.log('ðŸ‘‰ [SESSION INIT] Sending session update:', JSON.stringify(sessionUpdate, null, 2));
+            // console.log('ðŸ‘‰ [SESSION INIT] Sending session update:', JSON.stringify(sessionUpdate, null, 2));
+			console.log('ðŸ‘‰ [SESSION INIT] Sending session update:');
+
             try {
                 openAiWs.send(JSON.stringify(sessionUpdate));
             } catch (err) {
@@ -128,8 +130,8 @@ fastify.register(async (fastify) => {
         };
 
         openAiWs.on('open', () => {
-           // console.log('ðŸ§  Connessione OpenAI attiva');
-            console.log('ðŸ§  OpenAI WebSocket connection opened (readyState:', openAiWs.readyState, ')');
+			console.log('ðŸ§  Connessione OpenAI attiva');
+            // console.log('ðŸ§  OpenAI WebSocket connection opened (readyState:', openAiWs.readyState, ')');
             initializeSession();
         });
 
@@ -137,24 +139,25 @@ fastify.register(async (fastify) => {
             
             try {
                 const msg = JSON.parse(data);
-                if (LOG_EVENT_TYPES.includes(msg.type)) {
+                
+				// if (LOG_EVENT_TYPES.includes(msg.type)) {
                    // console.log(`[OpenAI] ${msg.type}`, msg);
-                    console.log(`[OpenAI EVENT] ${msg.type}`, JSON.stringify(msg, null, 2));
-                }
+                    // console.log(`[OpenAI EVENT] ${msg.type}`, JSON.stringify(msg, null, 2));
+                // }
 				
 				
 				// Reinvia session.update dopo session.created
 				if (msg.type === "session.created") {
-					console.log("? SESSION CREATED RECEIVED");	
+					console.log("SESSION CREATED RECEIVED");	
 				}
 
 				if (msg.type === "session.updated") {
-					console.log("? SESSION UPDATED RECEIVED:");
-					console.log(JSON.stringify(msg.session, null, 2));
+					console.log("SESSION UPDATED RECEIVED:");
+					// console.log(JSON.stringify(msg.session, null, 2));
 				}
 
                 if (msg.type === 'response.audio.delta' && msg.delta) {
-                     console.log('ðŸ”Š [AUDIO DELTA] Sending audio chunk to Twilio');
+                    // console.log('ðŸ”Š [AUDIO DELTA] Sending audio chunk to Twilio');
                     conn.send(JSON.stringify({
                         event: 'media',
                         streamSid,
