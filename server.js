@@ -170,7 +170,7 @@ fastify.register(async (fastify) => {
 					}));					
 				}
 				
-				f (msg.type === "reposnse.created") {
+				if (msg.type === "reposnse.created") {
 					console.log("response created");
 					//console.log(JSON.stringify(msg.session, null, 2));
 				}
