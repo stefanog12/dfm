@@ -52,6 +52,9 @@ fastify.register(async (fastify) => {
         let responseStartTimestampTwilio = null;
 		let NotYetCommitted = false;  // True se è già stato committato 
 		
+		let ignoreAudioUntil = 0; // anti-echo della risposta
+		let resetVadUntil = 0;    // forza silenzio per il VAD 
+		
 		let speechTimeout = null;
         const MAX_SPEECH_DURATION = 8000; // 8 secondi
 		
@@ -72,7 +75,7 @@ fastify.register(async (fastify) => {
                         type: 'server_vad',
                         threshold: 0.55,
                         prefix_padding_ms: 200,
-                        silence_duration_ms: 300,
+                        silence_duration_ms: 400,
 						interrupt_response: false 
                     },
                     input_audio_format: 'g711_ulaw',    // IMPORTANT: Twilio sends PCMU
@@ -210,6 +213,11 @@ fastify.register(async (fastify) => {
 							} else {
 							console.log('?? Timeout: nessun audio utente da committare, salto il commit');
 							}
+							
+							// Forza reset VAD
+							resetVadUntil = Date.now() + 500;
+							console.log('?? Timeout: forza reset vad con 500 ms di silenzio');
+
 						}, MAX_SPEECH_DURATION);
                 }
 				
@@ -233,6 +241,12 @@ fastify.register(async (fastify) => {
 					}
 				}
 				
+				// Reinvia session.update dopo session.created
+				if (msg.type === "response.done") {
+					console.log("RESPONSE DONE - wait 300 msec");
+					ignoreAudioUntil = Date.now() + 300; // 300ms di protezione
+				}
+				
             } catch (err) {
                 console.error('Errore parsing da OpenAI:', err);
             }
@@ -245,6 +259,14 @@ fastify.register(async (fastify) => {
                // console.log('[FROM TWILIO] Event:', data.event);
                 switch (data.event) {
                     case 'media':
+					
+						// 1. Anti-echo 
+						if (Date.now() < ignoreAudioUntil) return;
+							
+						// 2. Reset VAD dopo commit 
+						if (Date.now() < resetVadUntil) return;
+							
+							
                         latestMediaTimestamp = data.media.timestamp;
                         // console.log(`ðŸŽ™ï¸ [MEDIA] Timestamp: ${latestMediaTimestamp}`);
                         if (openAiWs.readyState === WebSocket.OPEN) {
