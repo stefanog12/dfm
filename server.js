@@ -50,6 +50,7 @@ fastify.register(async (fastify) => {
         let lastAssistantItem = null;
         let markQueue = [];
         let responseStartTimestampTwilio = null;
+		let NotYetCommitted = false;  // True se è già stato committato 
 		
 		let speechTimeout = null;
         const MAX_SPEECH_DURATION = 8000; // 8 secondi
@@ -112,6 +113,7 @@ fastify.register(async (fastify) => {
                 }
                 conn.send(JSON.stringify({ event: 'clear', streamSid }));
                 markQueue = [];
+				NotYetCommitted = true;
                 lastAssistantItem = null;
                 responseStartTimestampTwilio = null;
             }
@@ -199,6 +201,7 @@ fastify.register(async (fastify) => {
 					if (speechTimeout) clearTimeout(speechTimeout);
 						speechTimeout = setTimeout(() => {
 							console.warn('? [TIMEOUT] Forcing speech_stopped after 8s');
+							NotYetCommitted = false;
 							if (openAiWs.readyState === WebSocket.OPEN) {
 								openAiWs.send(JSON.stringify({
 									type: 'input_audio_buffer.commit'
@@ -219,11 +222,11 @@ fastify.register(async (fastify) => {
 					}
 
 					// Se c'è audio utente nel buffer, committiamo subito (turno naturale)
-					if (openAiWs.readyState === WebSocket.OPEN) {
+					if (openAiWs.readyState === WebSocket.OPEN && NotYetCommitted) {
 						openAiWs.send(JSON.stringify({
 							type: 'input_audio_buffer.commit'
 						}));
-						hasUserAudioSinceLastCommit = false;
+						NotYetCommitted = false;
 						userTurnOpen = false;
 					} else {
 						console.log('?? speech_stopped ma buffer vuoto, non faccio commit');
