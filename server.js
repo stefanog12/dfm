@@ -163,7 +163,7 @@ fastify.register(async (fastify) => {
 				
 				// VAD ha ricevuto commit
 				if (msg.type === "input_audio_buffer.committed") {
-					console.log("INPUT COMMITTED - START RESPONSE????");
+					console.log("?INPUT COMMITTED - START RESPONSE");
 					console.log('?? Requesting response without RAG context');
 					openAiWs.send(JSON.stringify({
 						type: "response.create",
@@ -236,8 +236,9 @@ fastify.register(async (fastify) => {
 						}));
 						NotYetCommitted = false;
 						userTurnOpen = false;
+						console.log('!! speech_stopped naturale, ---> commit');
 					} else {
-						console.log('?? speech_stopped ma buffer vuoto, non faccio commit');
+						console.log('?? speech_stopped ma già committato, non faccio commit');
 					}
 				}
 				
