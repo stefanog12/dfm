@@ -146,10 +146,11 @@ fastify.register(async (fastify) => {
             
             try {
                 const msg = JSON.parse(data);
+				console.log(`[OpenAI EVENT] ${msg.type}`, JSON.stringify(msg, null, 2));
                 
 				// if (LOG_EVENT_TYPES.includes(msg.type)) {
                    // console.log(`[OpenAI] ${msg.type}`, msg);
-                    // console.log(`[OpenAI EVENT] ${msg.type}`, JSON.stringify(msg, null, 2));
+                    
                 // }
 				
 				
