@@ -51,7 +51,6 @@ fastify.register(async (fastify) => {
         let markQueue = [];
         let responseStartTimestampTwilio = null;
 		let NotYetCommitted = false;  // True se è già stato committato 
-		let ArtificialCommitted = true;  // True quando il commit è forzato nel codice, false quando è interno al VAD dopo un speech stopped
 		
 		let ignoreAudioUntil = 0; // anti-echo della risposta
 		let resetVadUntil = 0;    // forza silenzio per il VAD 
@@ -118,7 +117,6 @@ fastify.register(async (fastify) => {
                 conn.send(JSON.stringify({ event: 'clear', streamSid }));
                 markQueue = [];
 				NotYetCommitted = true;
-				ArtificialCommitted = true;
                 lastAssistantItem = null;
                 responseStartTimestampTwilio = null;
             }
@@ -146,11 +144,10 @@ fastify.register(async (fastify) => {
             
             try {
                 const msg = JSON.parse(data);
-				console.log(`[OpenAI EVENT] ${msg.type}`, JSON.stringify(msg, null, 2));
                 
 				// if (LOG_EVENT_TYPES.includes(msg.type)) {
                    // console.log(`[OpenAI] ${msg.type}`, msg);
-                    
+                    // console.log(`[OpenAI EVENT] ${msg.type}`, JSON.stringify(msg, null, 2));
                 // }
 				
 				
@@ -166,18 +163,16 @@ fastify.register(async (fastify) => {
 				
 				// VAD ha ricevuto commit
 				if (msg.type === "input_audio_buffer.committed") {
-					if (ArtificialCommitted) { 
-						console.log("?ARTIFICIAL COMMITTED - START RESPONSE");
-						console.log('?? Requesting response without RAG context');
-						openAiWs.send(JSON.stringify({
-							type: "response.create",
-							response: {
-								modalities: ["audio", "text"],
-								voice: VOICE,
-								temperature: 0.8
-							}
-						}));
-					}	
+					console.log("?INPUT COMMITTED - START RESPONSE");
+					console.log('?? Requesting response without RAG context');
+					openAiWs.send(JSON.stringify({
+						type: "response.create",
+						response: {
+							modalities: ["audio", "text"],
+							voice: VOICE,
+							temperature: 0.8
+						}
+					}));					
 				}
 				
 				if (msg.type === "response.created") {
@@ -244,8 +239,6 @@ fastify.register(async (fastify) => {
 						console.log('!! speech_stopped naturale, ---> commit');
 					} else {
 						console.log('?? speech_stopped ma già committato, non faccio commit');
-						ArtificialCommitted = false;
-						
 					}
 				}
 				
