@@ -75,7 +75,7 @@ fastify.register(async (fastify) => {
                         type: 'server_vad',
                         threshold: 0.55,
                         prefix_padding_ms: 200,
-                        silence_duration_ms: 400,
+                        silence_duration_ms: 500,
 						interrupt_response: false 
                     },
                     input_audio_format: 'g711_ulaw',    // IMPORTANT: Twilio sends PCMU
@@ -215,8 +215,8 @@ fastify.register(async (fastify) => {
 							}
 							
 							// Forza reset VAD
-							resetVadUntil = Date.now() + 500;
-							console.log('?? Timeout: forza reset vad con 500 ms di silenzio');
+							resetVadUntil = Date.now() + 1200;
+							console.log('?? Timeout: forza reset vad con 1200 ms di silenzio');
 
 						}, MAX_SPEECH_DURATION);
                 }
