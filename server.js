@@ -75,7 +75,7 @@ fastify.register(async (fastify) => {
                         type: 'server_vad',
                         threshold: 0.55,
                         prefix_padding_ms: 200,
-                        silence_duration_ms: 500,
+                        silence_duration_ms: 400,
 						interrupt_response: false 
                     },
                     input_audio_format: 'g711_ulaw',    // IMPORTANT: Twilio sends PCMU
@@ -165,14 +165,14 @@ fastify.register(async (fastify) => {
 				if (msg.type === "input_audio_buffer.committed") {
 					console.log("?INPUT COMMITTED - START RESPONSE");
 					console.log('?? Requesting response without RAG context');
-					// openAiWs.send(JSON.stringify({
-					//	type: "response.create",
-					//	response: {
-					//		modalities: ["audio", "text"],
-					//		voice: VOICE,
-					//		temperature: 0.8
-					//	}
-					// }));					
+					openAiWs.send(JSON.stringify({
+						type: "response.create",
+						response: {
+							modalities: ["audio", "text"],
+							voice: VOICE,
+							temperature: 0.8
+						}
+					}));					
 				}
 				
 				if (msg.type === "response.created") {
@@ -204,19 +204,19 @@ fastify.register(async (fastify) => {
 					if (speechTimeout) clearTimeout(speechTimeout);
 						speechTimeout = setTimeout(() => {
 							console.warn('? [TIMEOUT] Forcing speech_stopped after 8s');
-						//	NotYetCommitted = false;
-						//	if (openAiWs.readyState === WebSocket.OPEN) {
-						//		openAiWs.send(JSON.stringify({
-						//			type: 'input_audio_buffer.commit'
-						//		}));
+							NotYetCommitted = false;
+							if (openAiWs.readyState === WebSocket.OPEN) {
+								openAiWs.send(JSON.stringify({
+									type: 'input_audio_buffer.commit'
+								}));
 								
-						//	} else {
-						//	console.log('?? Timeout: nessun audio utente da committare, salto il commit');
-						//	}
+							} else {
+							console.log('?? Timeout: nessun audio utente da committare, salto il commit');
+							}
 							
 							// Forza reset VAD
-							resetVadUntil = Date.now() + 1500;
-							console.log('?? Timeout: forza reset vad con 1500 ms di silenzio');
+							resetVadUntil = Date.now() + 500;
+							console.log('?? Timeout: forza reset vad con 500 ms di silenzio');
 
 						}, MAX_SPEECH_DURATION);
                 }
@@ -230,22 +230,22 @@ fastify.register(async (fastify) => {
 					}
 
 					// Se c'è audio utente nel buffer, committiamo subito (turno naturale)
-					// if (openAiWs.readyState === WebSocket.OPEN && NotYetCommitted) {
-					//	openAiWs.send(JSON.stringify({
-					//		type: 'input_audio_buffer.commit'
-					//	}));
-					//	NotYetCommitted = false;
-					//	userTurnOpen = false;
-					//	console.log('!! speech_stopped naturale, ---> commit');
-					// } else {
-					//	console.log('?? speech_stopped ma già committato, non faccio commit');
-					// }
+					if (openAiWs.readyState === WebSocket.OPEN && NotYetCommitted) {
+						openAiWs.send(JSON.stringify({
+							type: 'input_audio_buffer.commit'
+						}));
+						NotYetCommitted = false;
+						userTurnOpen = false;
+						console.log('!! speech_stopped naturale, ---> commit');
+					} else {
+						console.log('?? speech_stopped ma già committato, non faccio commit');
+					}
 				}
 				
 				// Reinvia session.update dopo session.created
 				if (msg.type === "response.done") {
-					console.log("RESPONSE DONE - wait 1200 msec");
-					ignoreAudioUntil = Date.now() + 1200; // 300ms di protezione
+					console.log("RESPONSE DONE - wait 300 msec");
+					ignoreAudioUntil = Date.now() + 300; // 300ms di protezione
 				}
 				
             } catch (err) {
