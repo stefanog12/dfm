@@ -52,9 +52,7 @@ fastify.register(async (fastify) => {
         let responseStartTimestampTwilio = null;
 		let NotYetCommitted = false;  // True se è già stato committato 
 		
-		let ignoreAudioUntil = 0; // anti-echo della risposta
-		let resetVadUntil = 0;    // forza silenzio per il VAD 
-		
+	
 		let speechTimeout = null;
         const MAX_SPEECH_DURATION = 8000; // 8 secondi
 		
@@ -214,10 +212,6 @@ fastify.register(async (fastify) => {
 							console.log('?? Timeout: nessun audio utente da committare, salto il commit');
 							}
 							
-							// Forza reset VAD
-							resetVadUntil = Date.now() + 500;
-							console.log('?? Timeout: forza reset vad con 500 ms di silenzio');
-
 						}, MAX_SPEECH_DURATION);
                 }
 				
@@ -244,8 +238,7 @@ fastify.register(async (fastify) => {
 				
 				// Reinvia session.update dopo session.created
 				if (msg.type === "response.done") {
-					console.log("RESPONSE DONE - wait 300 msec");
-					ignoreAudioUntil = Date.now() + 300; // 300ms di protezione
+					console.log("RESPONSE DONE");
 				}
 				
             } catch (err) {
@@ -264,15 +257,7 @@ fastify.register(async (fastify) => {
 		                latestMediaTimestamp = data.media.timestamp;
                         console.log(`ðŸŽ™ï¸ [MEDIA] Timestamp: ${latestMediaTimestamp}`);
 					
-						// 1. Anti-echo 
-						if (Date.now() < ignoreAudioUntil) return;
-							
-						// 2. Reset VAD dopo commit 
-						if (Date.now() < resetVadUntil) return;
-							
-					
- 
-                        if (openAiWs.readyState === WebSocket.OPEN) {
+					    if (openAiWs.readyState === WebSocket.OPEN) {
                          //   console.log('âž¡ï¸ Sending audio to OpenAI (buffer.append)');
                             openAiWs.send(JSON.stringify({
                                 type: 'input_audio_buffer.append',
