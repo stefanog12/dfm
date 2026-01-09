@@ -261,15 +261,17 @@ fastify.register(async (fastify) => {
                 switch (data.event) {
                     case 'media':
 					
+		                latestMediaTimestamp = data.media.timestamp;
+                        console.log(`ðŸŽ™ï¸ [MEDIA] Timestamp: ${latestMediaTimestamp}`);
+					
 						// 1. Anti-echo 
 						if (Date.now() < ignoreAudioUntil) return;
 							
 						// 2. Reset VAD dopo commit 
 						if (Date.now() < resetVadUntil) return;
 							
-							
-                        latestMediaTimestamp = data.media.timestamp;
-                        // console.log(`ðŸŽ™ï¸ [MEDIA] Timestamp: ${latestMediaTimestamp}`);
+					
+ 
                         if (openAiWs.readyState === WebSocket.OPEN) {
                          //   console.log('âž¡ï¸ Sending audio to OpenAI (buffer.append)');
                             openAiWs.send(JSON.stringify({
