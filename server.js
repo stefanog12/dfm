@@ -51,6 +51,7 @@ fastify.register(async (fastify) => {
         let markQueue = [];
         let responseStartTimestampTwilio = null;
 		let NotYetCommitted = false;  // True se è già stato committato 
+		let GoAppend = true;  // False se è in corso la risposta  
 		
 	
 		let speechTimeout = null;
@@ -203,6 +204,7 @@ fastify.register(async (fastify) => {
 						speechTimeout = setTimeout(() => {
 							console.warn('? [TIMEOUT] Forcing speech_stopped after 8s');
 							NotYetCommitted = false;
+							GoAppend = true;
 							if (openAiWs.readyState === WebSocket.OPEN) {
 								openAiWs.send(JSON.stringify({
 									type: 'input_audio_buffer.commit'
@@ -229,6 +231,7 @@ fastify.register(async (fastify) => {
 							type: 'input_audio_buffer.commit'
 						}));
 						NotYetCommitted = false;
+						GoAppend = false;
 						userTurnOpen = false;
 						console.log('!! speech_stopped naturale, ---> commit');
 					} else {
@@ -239,6 +242,7 @@ fastify.register(async (fastify) => {
 				// Reinvia session.update dopo session.created
 				if (msg.type === "response.done") {
 					console.log("RESPONSE DONE");
+					GoAppend = true;
 				}
 				
             } catch (err) {
@@ -254,17 +258,17 @@ fastify.register(async (fastify) => {
                 switch (data.event) {
                     case 'media':
 					
-		                latestMediaTimestamp = data.media.timestamp;
-                        console.log(`ðŸŽ™ï¸ [MEDIA] Timestamp: ${latestMediaTimestamp}`);
+		               // latestMediaTimestamp = data.media.timestamp;
+                       // console.log(`ðŸŽ™ï¸ [MEDIA] Timestamp: ${latestMediaTimestamp}`);
 					
-					    if (openAiWs.readyState === WebSocket.OPEN) {
-                         //   console.log('âž¡ï¸ Sending audio to OpenAI (buffer.append)');
+					    if (openAiWs.readyState === WebSocket.OPEN && GoAppend) {
+                            console.log('âž¡ï¸ Sending audio to OpenAI (buffer.append)');
                             openAiWs.send(JSON.stringify({
                                 type: 'input_audio_buffer.append',
                                 audio: data.media.payload
                             }));
                         }else {
-                            console.warn('âš ï¸ OpenAI WebSocket not open, cannot send audio');
+                            console.warn('âš ï¸ OpenAI WebSocket not open or response in progress : cannot send audio');
                         }
                         break;
                     case 'start':
