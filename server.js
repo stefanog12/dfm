@@ -3,6 +3,9 @@ import WebSocket from 'ws';
 import dotenv from 'dotenv';
 import fastifyFormBody from '@fastify/formbody';
 import fastifyWs from '@fastify/websocket';
+import OpenAI from 'openai';
+import { searchMemory } from './rag.js';
+import fs from 'fs';
 
 dotenv.config();
 
@@ -13,6 +16,8 @@ if (!OPENAI_API_KEY) {
     console.error('Missing OpenAI API key. Please set it in the .env file.');
     process.exit(1);
 }
+
+const openaiClient = new OpenAI({ apiKey: OPENAI_API_KEY });
 
 const fastify = Fastify({ logger: true });
 fastify.register(fastifyFormBody);
@@ -26,7 +31,7 @@ const LOG_EVENT_TYPES = [ 'error', 'response.content.done', 'rate_limits.updated
 const SHOW_TIMING_MATH = false;
 
 fastify.get('/', async (req, reply) => {
-    reply.send({ message: 'ðŸŸ¢ Server Twilio/OpenAI attivo!' });
+    reply.send({ message: 'ðŸŸ¢ Server Twilio/OpenAI + RAG attivo!' });
 });
 
 fastify.all('/incoming-call', async (req, reply) => {
@@ -53,7 +58,11 @@ fastify.register(async (fastify) => {
 		let NotYetCommitted = false;  // True se è già stato committato 
 		let GoAppend = true;  // False se è in corso la risposta  
 		
-	
+		// ðŸ†• RAG state
+        let ragContext = "";
+        let hasCalledRag = false;
+        let pendingRagUpdate = false;
+                	
 		let speechTimeout = null;
         const MAX_SPEECH_DURATION = 8000; // 8 secondi
 		
@@ -67,6 +76,8 @@ fastify.register(async (fastify) => {
 
        // Initialize session with correct audio format for Twilio (PCMU)
         const initializeSession = () => {
+		    const instructions = BASE_SYSTEM_MESSAGE + (ragContext ? `\n\nðŸŽ¯ Adatta il tuo stile seguendo questi esempi di conversazioni passate:\n${ragContext}` : "");
+  
             const sessionUpdate = {
                 type: 'session.update',
                 session: {
@@ -80,15 +91,22 @@ fastify.register(async (fastify) => {
                     input_audio_format: 'g711_ulaw',    // IMPORTANT: Twilio sends PCMU
                     output_audio_format: 'g711_ulaw',   // Match PCMU output
                     voice: VOICE,
-                    instructions: BASE_SYSTEM_MESSAGE,
+                    instructions: instructions,
                     modalities: ["text", "audio"],
-					temperature: 0.8
+					temperature: 0.8,
+					input_audio_transcription: {
+                        model: "whisper-1"
+                    }
                 }
             };
 			
             // console.log('ðŸ‘‰ [SESSION INIT] Sending session update:', JSON.stringify(sessionUpdate, null, 2));
 			console.log('ðŸ‘‰ [SESSION INIT] Sending session update:');
 
+			if (ragContext) {
+                console.log('ðŸ“š [RAG CONTEXT] Instructions include RAG context');
+            }
+            			
             try {
                 openAiWs.send(JSON.stringify(sessionUpdate));
             } catch (err) {
@@ -96,7 +114,44 @@ fastify.register(async (fastify) => {
             }
         };
 
-		const MIN_TIME_BEFORE_INTERRUPT_MS = 700; // evita di interrompere per rumore immediato
+		 // ðŸ†• Generate embedding and search similar conversations
+        async function callRagOnFirstQuery(userText) {
+            try {
+                console.log('ðŸ” [RAG] Generating embedding for user query:', userText);
+                
+                const embeddingResponse = await openaiClient.embeddings.create({
+                    model: "text-embedding-3-small",
+                    input: userText
+                });
+
+                const queryEmbedding = embeddingResponse.data[0].embedding;
+                console.log('âœ… [RAG] Embedding generated');
+
+                // Search similar conversations
+                const results = await searchMemory(queryEmbedding, 3);
+                
+                console.log('ðŸ“Š [RAG] Top 3 similar conversations:');
+                results.forEach((r, idx) => {
+                    console.log(`   ${idx + 1}. ${r.id} (score: ${r.score.toFixed(4)})`);
+                    console.log(`      Preview: ${r.text.substring(0, 100)}...`);
+                });
+
+                // Format context from top results
+                ragContext = results.map((r, idx) => 
+                    `Esempio ${idx + 1} (${r.id}):\n${r.text}`
+                ).join('\n\n');
+
+                console.log('âœ¨ [RAG] Context updated, triggering session update');
+                
+                // Update session with new context
+                initializeSession();
+                
+                hasCalledRag = true;
+                
+            } catch (err) {
+                console.error('âŒ [RAG] Error:', err);
+            }
+        }
 		
         const handleSpeechStartedEvent = () => {
             console.log('ðŸ”Š Speech started detected from OpenAI');
@@ -196,6 +251,15 @@ fastify.register(async (fastify) => {
 
                     sendMark();
                 }
+				
+				// ðŸ†• Capture user speech for RAG (first time only)
+                if (msg.type === 'conversation.item.input_audio_transcription.completed' && !hasCalledRag) {
+                    const userText = msg.transcript;
+                    if (userText && userText.trim().length > 0) {
+                        console.log('ðŸ’¬ [FIRST USER MESSAGE]:', userText);
+                        callRagOnFirstQuery(userText);
+                    }
+                }
 
                 if (msg.type === 'input_audio_buffer.speech_started') {
                     handleSpeechStartedEvent();
@@ -262,7 +326,7 @@ fastify.register(async (fastify) => {
                        // console.log(`ðŸŽ™ï¸ [MEDIA] Timestamp: ${latestMediaTimestamp}`);
 					
 					    if (openAiWs.readyState === WebSocket.OPEN && GoAppend) {
-                            console.log('âž¡ï¸ Sending audio to OpenAI (buffer.append)');
+                            // console.log('âž¡ï¸ Sending audio to OpenAI (buffer.append)');
                             openAiWs.send(JSON.stringify({
                                 type: 'input_audio_buffer.append',
                                 audio: data.media.payload
