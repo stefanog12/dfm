@@ -3,9 +3,11 @@ import WebSocket from 'ws';
 import dotenv from 'dotenv';
 import fastifyFormBody from '@fastify/formbody';
 import fastifyWs from '@fastify/websocket';
-import OpenAI from 'openai';
-import { searchMemory } from './rag.js';
+import * as calendar from './calendar.js';  // QUESTO
+import authRoutes from "./auth.js";         // QUESTO da copilot
 import fs from 'fs';
+
+app.use("/", authRoutes);                   // QUESTO da copilot
 
 dotenv.config();
 
@@ -17,21 +19,70 @@ if (!OPENAI_API_KEY) {
     process.exit(1);
 }
 
-const openaiClient = new OpenAI({ apiKey: OPENAI_API_KEY });
-
 const fastify = Fastify({ logger: true });
 fastify.register(fastifyFormBody);
 fastify.register(fastifyWs);
 
-const BASE_SYSTEM_MESSAGE = 'You are a friendly and concise AI voice assistant. Keep your answers very short and conversational, like a real phone call. Your voice and personality should be warm and engaging, with a lively and playful tone. If interacting in a non-English language, start by using the standard accent or dialect familiar to the user. Prefer sentences under 10 seconds. If the user wants more, ask "Do you want me to continue?"';
+const BASE_SYSTEM_MESSAGE = 'You are a friendly and concise AI voice assistant. Keep your answers short and conversational, like a real phone call. Your voice and personality should be warm and engaging, with a lively and playful tone. If interacting in a non-English language, start by using the standard accent or dialect familiar to the user. Prefer sentences under 15 seconds. If the user wants more, ask "Do you want me to continue?"';
 const VOICE = 'alloy';
 const PORT = process.env.PORT || 3000;
+
+// Definizione tools per Google Calendar
+const CALENDAR_TOOLS = [
+    {
+        type: "function",
+        name: "find_available_slots",
+        description: "Trova slot disponibili per appuntamenti. Usala quando il cliente chiede disponibilità o vuole prenotare l'intervento di un tecnico.",
+        parameters: {
+            type: "object",
+            properties: {
+                request: {
+                    type: "string",
+                    description: "La richiesta del cliente in linguaggio naturale, es: 'primo slot disponibile', 'settimana prossima pomeriggio'",
+                },
+            },
+            required: ["request"],
+        },
+    },
+    {
+        type: "function",
+        name: "create_appointment",
+        description: "Crea un appuntamento nel calendario. Usala SOLO dopo aver confermato i dettagli con il cliente.",
+        parameters: {
+            type: "object",
+            properties: {
+                date: {
+                    type: "string",
+                    description: "Data in formato DD/MM/YYYY",
+                },
+                time: {
+                    type: "string",
+                    description: "Ora in formato HH:MM",
+                },
+                customer_name: {
+                    type: "string",
+                    description: "Nome del cliente",
+                },
+                customer_phone: {
+                    type: "string",
+                    description: "Numero di telefono del cliente",
+                },
+                address: {
+                    type: "string",
+                    description: "Indirizzo del cliente",
+                },
+            },
+            required: ["date", "time", "customer_name", "customer_phone", "address"],
+        },
+    },
+];
+
 
 const LOG_EVENT_TYPES = [ 'error', 'response.content.done', 'rate_limits.updated', 'response.done', 'input_audio_buffer.committed', 'input_audio_buffer.speech_stopped', 'input_audio_buffer.speech_started', 'session.created', 'session.updated' ];
 const SHOW_TIMING_MATH = false;
 
 fastify.get('/', async (req, reply) => {
-    reply.send({ message: 'ðŸŸ¢ Server Twilio/OpenAI + RAG attivo!' });
+    reply.send({ message: 'ðŸŸ¢ Server Twilio/OpenAI con calendar attivo!' });
 });
 
 fastify.all('/incoming-call', async (req, reply) => {
@@ -58,11 +109,7 @@ fastify.register(async (fastify) => {
 		let NotYetCommitted = false;  // True se è già stato committato 
 		let GoAppend = true;  // False se è in corso la risposta  
 		
-		// ðŸ†• RAG state
-        let ragContext = "";
-        let hasCalledRag = false;
-        let pendingRagUpdate = false;
-                	
+	
 		let speechTimeout = null;
         const MAX_SPEECH_DURATION = 8000; // 8 secondi
 		
@@ -76,8 +123,6 @@ fastify.register(async (fastify) => {
 
        // Initialize session with correct audio format for Twilio (PCMU)
         const initializeSession = () => {
-		    const instructions = BASE_SYSTEM_MESSAGE + (ragContext ? `\n\nðŸŽ¯ Adatta il tuo stile seguendo questi esempi di conversazioni passate:\n${ragContext}` : "");
-  
             const sessionUpdate = {
                 type: 'session.update',
                 session: {
@@ -91,67 +136,57 @@ fastify.register(async (fastify) => {
                     input_audio_format: 'g711_ulaw',    // IMPORTANT: Twilio sends PCMU
                     output_audio_format: 'g711_ulaw',   // Match PCMU output
                     voice: VOICE,
-                    instructions: instructions,
+                    instructions: BASE_SYSTEM_MESSAGE,
                     modalities: ["text", "audio"],
-					temperature: 0.8,
-					input_audio_transcription: {
-                        model: "whisper-1"
-                    }
+					temperature: 0.8
                 }
             };
 			
             // console.log('ðŸ‘‰ [SESSION INIT] Sending session update:', JSON.stringify(sessionUpdate, null, 2));
 			console.log('ðŸ‘‰ [SESSION INIT] Sending session update:');
 
-			if (ragContext) {
-                console.log('ðŸ“š [RAG CONTEXT] Instructions include RAG context');
-            }
-            			
             try {
                 openAiWs.send(JSON.stringify(sessionUpdate));
             } catch (err) {
                 console.error('ðŸš¨ [SESSION INIT] Failed to send session update:', err);
             }
         };
-
-		 // ðŸ†• Generate embedding and search similar conversations
-        async function callRagOnFirstQuery(userText) {
+		
+		 // Gestione chiamate a funzioni
+        async function handleFunctionCall(functionName, args) {
+            console.log(`?? [FUNCTION CALL] ${functionName}`, args);
+            
             try {
-                console.log('ðŸ” [RAG] Generating embedding for user query:', userText);
+                if (functionName === 'find_available_slots') {
+                    const result = await calendar.parseSchedulingRequest(args.request);
+                    return JSON.stringify(result);
+                }
                 
-                const embeddingResponse = await openaiClient.embeddings.create({
-                    model: "text-embedding-3-small",
-                    input: userText
-                });
-
-                const queryEmbedding = embeddingResponse.data[0].embedding;
-                console.log('âœ… [RAG] Embedding generated');
-
-                // Search similar conversations
-                const results = await searchMemory(queryEmbedding, 3);
+                if (functionName === 'create_appointment') {
+                    // Parse date e time
+                    const [day, month, year] = args.date.split('/');
+                    const [hour, minute] = args.time.split(':');
+                    const appointmentDate = new Date(year, month - 1, day, hour, minute);
+                    
+                    const result = await calendar.createAppointment(
+                        appointmentDate,
+                        args.customer_name,
+                        args.customer_phone,
+                        args.address
+                    );
+                    
+                    return JSON.stringify(result);
+                }
                 
-                console.log('ðŸ“Š [RAG] Top 3 similar conversations:');
-                results.forEach((r, idx) => {
-                    console.log(`   ${idx + 1}. ${r.id} (score: ${r.score.toFixed(4)})`);
-                    console.log(`      Preview: ${r.text.substring(0, 100)}...`);
-                });
-
-                // Format context from top results
-                ragContext = results.map((r, idx) => 
-                    `Esempio ${idx + 1} (${r.id}):\n${r.text}`
-                ).join('\n\n');
-
-                console.log('âœ¨ [RAG] Context updated, triggering session update');
+                return JSON.stringify({ error: 'Unknown function' });
                 
-                // Update session with new context
-                initializeSession();
-                
-                hasCalledRag = true;
-                
-            } catch (err) {
-                console.error('âŒ [RAG] Error:', err);
+            } catch (error) {
+                console.error('? [FUNCTION ERROR]:', error);
+                return JSON.stringify({ error: error.message });
             }
         }
+
+		const MIN_TIME_BEFORE_INTERRUPT_MS = 700; // evita di interrompere per rumore immediato
 		
         const handleSpeechStartedEvent = () => {
             console.log('ðŸ”Š Speech started detected from OpenAI');
@@ -194,7 +229,7 @@ fastify.register(async (fastify) => {
             initializeSession();
         });
 
-        openAiWs.on('message', (data) => {
+        openAiWs.on('message', async (data) => {
             
             try {
                 const msg = JSON.parse(data);
@@ -218,7 +253,7 @@ fastify.register(async (fastify) => {
 				// VAD ha ricevuto commit
 				if (msg.type === "input_audio_buffer.committed") {
 					console.log("?INPUT COMMITTED - START RESPONSE");
-					console.log('?? Requesting response with RAG context');
+					console.log('?? Requesting response without RAG context');
 					openAiWs.send(JSON.stringify({
 						type: "response.create",
 						response: {
@@ -243,22 +278,13 @@ fastify.register(async (fastify) => {
                     }));
 
                     if (!responseStartTimestampTwilio) {
-                        // console.log('â³ First audio chunk, marking timestamp');
+                        console.log('â³ First audio chunk, marking timestamp');
                         responseStartTimestampTwilio = latestMediaTimestamp;
                     }
 
                     if (msg.item_id) lastAssistantItem = msg.item_id;
 
                     sendMark();
-                }
-				
-				// ðŸ†• Capture user speech for RAG (first time only)
-                if (msg.type === 'conversation.item.input_audio_transcription.completed' && !hasCalledRag) {
-                    const userText = msg.transcript;
-                    if (userText && userText.trim().length > 0) {
-                        console.log('ðŸ’¬ [FIRST USER MESSAGE]:', userText);
-                        callRagOnFirstQuery(userText);
-                    }
                 }
 
                 if (msg.type === 'input_audio_buffer.speech_started') {
@@ -302,6 +328,30 @@ fastify.register(async (fastify) => {
 						console.log('?? speech_stopped ma già committato, non faccio commit');
 					}
 				}
+				
+				// Function call richiesta
+                if (msg.type === 'response.function_call_arguments.done') {
+                    console.log('!! Gestione Calendar');
+					const functionName = msg.name;
+                    const args = JSON.parse(msg.arguments);
+                    
+                    const result = await handleFunctionCall(functionName, args);
+                    
+                    // Invia il risultato a OpenAI
+                    openAiWs.send(JSON.stringify({
+                        type: 'conversation.item.create',
+                        item: {
+                            type: 'function_call_output',
+                            call_id: msg.call_id,
+                            output: result,
+                        }
+                    }));
+                    
+                    // Richiedi risposta con il risultato
+                    openAiWs.send(JSON.stringify({
+                        type: 'response.create'
+                    }));
+                }
 				
 				// Reinvia session.update dopo session.created
 				if (msg.type === "response.done") {
