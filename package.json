@@ -26,6 +26,7 @@
     "fastify": "^5.0.0",
     "fetch-blob": "^3.2.0",
     "formdata-polyfill": "^4.0.10",
+    "googleapis": "^170.0.0",
     "node-domexception": "^1.0.0",
     "node-fetch": "^3.3.2",
     "openai": "^6.9.1",
