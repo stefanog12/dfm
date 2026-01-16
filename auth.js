@@ -1,41 +1,97 @@
-import { createOAuthClient } from "./googleClient.js";
+import express from 'express';
+import * as googleClient from './googleClient.js';
 
-const SCOPES = ["https://www.googleapis.com/auth/calendar"];
+const router = express.Router();
 
-let savedTokens = null;
-
-export default async function authRoutes(fastify, opts) {
-  fastify.get("/auth/google", async (req, reply) => {
-    const oauth2Client = createOAuthClient();
-
-    const url = oauth2Client.generateAuthUrl({
-      access_type: "offline",
-      prompt: "consent",
-      scope: SCOPES,
-    });
-
-    reply.redirect(url);
-  });
-
-  fastify.get("/oauth2/callback", async (req, reply) => {
-    const oauth2Client = createOAuthClient();
-    const code = req.query.code;
-
+/**
+ * Route per iniziare il flusso OAuth
+ */
+router.get('/oauth/authorize', (req, res) => {
     try {
-      const { tokens } = await oauth2Client.getToken(code);
-      savedTokens = tokens;
-      console.log("✅ Google OAuth tokens salvati");
-      reply.send("Google Calendar collegato correttamente! Puoi chiudere questa pagina.");
-    } catch (err) {
-      console.error("Errore OAuth:", err);
-      reply.status(500).send("Errore durante l'autenticazione con Google");
+        const authUrl = googleClient.generateAuthUrl();
+        console.log('🔐 Redirect a Google OAuth');
+        res.redirect(authUrl);
+    } catch (error) {
+        console.error('❌ Errore generazione auth URL:', error);
+        res.status(500).send('Errore durante l\'autenticazione: ' + error.message);
     }
-  });
+});
 
-  fastify.decorate("getAuthorizedClient", () => {
-    if (!savedTokens) return null;
-    const client = createOAuthClient();
-    client.setCredentials(savedTokens);
-    return client;
-  });
-}
+/**
+ * Callback OAuth - Google reindirizza qui dopo il consenso
+ */
+router.get('/oauth/callback', async (req, res) => {
+    const { code, error } = req.query;
+    
+    if (error) {
+        console.error('❌ Errore OAuth:', error);
+        return res.status(400).send('Autenticazione fallita: ' + error);
+    }
+    
+    if (!code) {
+        return res.status(400).send('Codice di autorizzazione mancante');
+    }
+    
+    try {
+        console.log('🔄 Scambio codice con token...');
+        await googleClient.getTokenFromCode(code);
+        
+        res.send(`
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <title>Autenticazione Riuscita</title>
+                <style>
+                    body {
+                        font-family: Arial, sans-serif;
+                        display: flex;
+                        justify-content: center;
+                        align-items: center;
+                        height: 100vh;
+                        margin: 0;
+                        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                    }
+                    .container {
+                        background: white;
+                        padding: 40px;
+                        border-radius: 10px;
+                        box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+                        text-align: center;
+                    }
+                    h1 { color: #4CAF50; margin-bottom: 20px; }
+                    p { color: #666; font-size: 18px; }
+                    .icon { font-size: 60px; margin-bottom: 20px; }
+                </style>
+            </head>
+            <body>
+                <div class="container">
+                    <div class="icon">✅</div>
+                    <h1>Autenticazione Riuscita!</h1>
+                    <p>Google Calendar è stato connesso con successo.</p>
+                    <p><strong>Puoi chiudere questa finestra.</strong></p>
+                </div>
+            </body>
+            </html>
+        `);
+        
+        console.log('✅ Autenticazione completata!');
+    } catch (error) {
+        console.error('❌ Errore durante lo scambio token:', error);
+        res.status(500).send('Errore durante l\'autenticazione: ' + error.message);
+    }
+});
+
+/**
+ * Route per controllare lo stato dell'autenticazione
+ */
+router.get('/oauth/status', async (req, res) => {
+    const isAuth = await googleClient.isAuthenticated();
+    res.json({
+        authenticated: isAuth,
+        message: isAuth 
+            ? 'Google Calendar connesso' 
+            : 'Autenticazione necessaria - visita /oauth/authorize'
+    });
+});
+
+export default router;
