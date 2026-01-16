@@ -1,6 +1,8 @@
 # Variabili segrete
 .env
 .env.local
+credentials.json
+token.json
 
 # Node.js dependencies
 node_modules/
