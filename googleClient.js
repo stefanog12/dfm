@@ -4,7 +4,7 @@ import path from 'path';
 
 const CREDENTIALS_PATH = './credentials.json';
 const TOKEN_PATH = './token.json';
-const REDIRECT_URI = process.env.REDIRECT_URI;
+const REDIRECT_URI = process.env.REDIRECT_URI || 'https://dfm-production-36a5.up.railway.app/oauth2/callback';
 
 let oauth2Client = null;
 
