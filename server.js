@@ -5,9 +5,8 @@ import fastifyFormBody from '@fastify/formbody';
 import fastifyWs from '@fastify/websocket';
 import * as calendar from './calendar.js';  // QUESTO
 import authRoutes from "./auth.js";         // QUESTO da copilot
+import express from "express";				// QUESTO da copilot
 import fs from 'fs';
-
-app.use("/", authRoutes);                   // QUESTO da copilot
 
 dotenv.config();
 
@@ -18,6 +17,9 @@ if (!OPENAI_API_KEY) {
     console.error('Missing OpenAI API key. Please set it in the .env file.');
     process.exit(1);
 }
+
+const app = express();						// QUESTO da copilot
+app.use("/", authRoutes);                   // QUESTO da copilot
 
 const fastify = Fastify({ logger: true });
 fastify.register(fastifyFormBody);
