@@ -5,7 +5,6 @@ import fastifyFormBody from '@fastify/formbody';
 import fastifyWs from '@fastify/websocket';
 import * as calendar from './calendar.js';  // QUESTO
 import authRoutes from "./auth.js";         // QUESTO da copilot
-import express from "express";				// QUESTO da copilot
 import fs from 'fs';
 
 dotenv.config();
@@ -18,12 +17,10 @@ if (!OPENAI_API_KEY) {
     process.exit(1);
 }
 
-const app = express();						// QUESTO da copilot
-app.use("/", authRoutes);                   // QUESTO da copilot
-
 const fastify = Fastify({ logger: true });
 fastify.register(fastifyFormBody);
 fastify.register(fastifyWs);
+fastify.register(authRoutes);
 
 const BASE_SYSTEM_MESSAGE = `
 You are a friendly and concise AI voice assistant. Keep your answers short and conversational, like a real phone call.
