@@ -1,12 +1,10 @@
 import { createOAuthClient } from "./googleClient.js";
 
-let savedTokens = null;
-
 const SCOPES = ["https://www.googleapis.com/auth/calendar"];
 
-export default async function authRoutes(fastify, opts) {
+let savedTokens = null;
 
-  // STEP 1 — Redirect a Google
+export default async function authRoutes(fastify, opts) {
   fastify.get("/auth/google", async (req, reply) => {
     const oauth2Client = createOAuthClient();
 
@@ -19,7 +17,6 @@ export default async function authRoutes(fastify, opts) {
     reply.redirect(url);
   });
 
-  // STEP 2 — Callback da Google
   fastify.get("/oauth2/callback", async (req, reply) => {
     const oauth2Client = createOAuthClient();
     const code = req.query.code;
@@ -27,15 +24,14 @@ export default async function authRoutes(fastify, opts) {
     try {
       const { tokens } = await oauth2Client.getToken(code);
       savedTokens = tokens;
-
-      reply.send("Google Calendar collegato correttamente!");
+      console.log("✅ Google OAuth tokens salvati");
+      reply.send("Google Calendar collegato correttamente! Puoi chiudere questa pagina.");
     } catch (err) {
       console.error("Errore OAuth:", err);
-      reply.status(500).send("Errore durante l'autenticazione");
+      reply.status(500).send("Errore durante l'autenticazione con Google");
     }
   });
 
-  // Funzione per calendar.js
   fastify.decorate("getAuthorizedClient", () => {
     if (!savedTokens) return null;
     const client = createOAuthClient();
