@@ -280,7 +280,7 @@ fastify.register(async (fastify) => {
                     }));
 
                     if (!responseStartTimestampTwilio) {
-                        console.log('â³ First audio chunk, marking timestamp');
+                        // console.log('â³ First audio chunk, marking timestamp');
                         responseStartTimestampTwilio = latestMediaTimestamp;
                     }
 
@@ -378,7 +378,7 @@ fastify.register(async (fastify) => {
                        // console.log(`ðŸŽ™ï¸ [MEDIA] Timestamp: ${latestMediaTimestamp}`);
 					
 					    if (openAiWs.readyState === WebSocket.OPEN && GoAppend) {
-                            // console.log('âž¡ï¸ Sending audio to OpenAI (buffer.append)');
+                            console.log('âž¡ï¸ Sending audio to OpenAI (buffer.append)');
                             openAiWs.send(JSON.stringify({
                                 type: 'input_audio_buffer.append',
                                 audio: data.media.payload
