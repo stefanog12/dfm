@@ -3,8 +3,10 @@ import WebSocket from "ws";
 import dotenv from "dotenv";
 import fastifyFormBody from "@fastify/formbody";
 import fastifyWs from "@fastify/websocket";
-import * as calendar from "./calendar.js";
-import authRoutes from "./auth.js";
+import express from 'express';
+import * as calendar from './calendar.js';
+import authRoutes from './auth.js';
+import * as googleClient from './googleClient.js';
 
 dotenv.config();
 
@@ -13,6 +15,19 @@ if (!OPENAI_API_KEY) {
   console.error("Missing OPENAI_API_KEY");
   process.exit(1);
 }
+
+// Express app per OAuth routes
+const expressApp = express();
+expressApp.use('/', authRoutes);
+
+// Start Express server per OAuth
+const EXPRESS_PORT = 3001;
+expressApp.listen(EXPRESS_PORT, () => {
+    console.log(`?? OAuth server su http://localhost:${EXPRESS_PORT}`);
+});
+
+// Inizializza Google Client
+await googleClient.initialize();
 
 const VOICE = "alloy";
 const PORT = process.env.PORT || 3000;
@@ -59,9 +74,10 @@ Your voice and personality should be warm and engaging, with a lively and playfu
 If interacting in a non-English language, start by using the standard accent or dialect familiar to the user.
 Prefer sentences under 10 seconds. Keep responses SHORT (2-3 sentences max). If the user wants more, ask "Do you want me to continue?".
 
-IMPORTANT: When the customer mentions scheduling, appointments, or asks about availability:
-- Use the find_available_slots function to check calendar availability
-- Use the create_appointment function to book appointments after confirming details
+IMPORTANT FUNCTION USAGE:
+- When customer asks about availability or scheduling, use find_available_slots function
+- When customer confirms appointment details, use create_appointment function
+- Always collect: name, phone, and address before creating appointment
 `;
 
 const fastify = Fastify({ logger: true });
@@ -69,8 +85,12 @@ fastify.register(fastifyFormBody);
 fastify.register(fastifyWs);
 fastify.register(authRoutes);
 
-fastify.get("/", async (req, reply) => {
-  reply.send({ message: "🟢 Server Twilio/OpenAI con calendar attivo!" });
+fastify.get('/', async (req, reply) => {
+    const isAuth = await googleClient.isAuthenticated();
+    reply.send({ 
+        message: '?? Server attivo',
+        calendar: isAuth ? 'Connesso' : 'Non autenticato - visita http://localhost:3001/oauth/authorize'
+    });
 });
 
 fastify.all("/incoming-call", async (req, reply) => {
@@ -88,7 +108,7 @@ fastify.all("/incoming-call", async (req, reply) => {
 
 fastify.register(async (fastify) => {
   fastify.get("/media-stream", { websocket: true }, (conn, req) => {
-    console.log("🎧 Client Twilio connesso");
+    console.log("?? Client Twilio connesso");
     let streamSid = null;
     let latestMediaTimestamp = 0;
     let lastAssistantItem = null;
@@ -131,12 +151,12 @@ fastify.register(async (fastify) => {
         },
       };
 
-      console.log("👉 [SESSION INIT] Sending session update");
+      console.log("?? [SESSION INIT] Sending session update");
       openAiWs.send(JSON.stringify(sessionUpdate));
     };
 
     async function handleFunctionCall(functionName, args) {
-      console.log("🛠 [FUNCTION CALL]", functionName, args);
+      console.log("?? [FUNCTION CALL]", functionName, args);
       try {
         if (functionName === "find_available_slots") {
           const result = await calendar.parseSchedulingRequest(fastify, args.request);
@@ -161,19 +181,19 @@ fastify.register(async (fastify) => {
 
         return JSON.stringify({ error: "Unknown function" });
       } catch (error) {
-        console.error("❌ [FUNCTION ERROR]:", error);
+        console.error("? [FUNCTION ERROR]:", error);
         return JSON.stringify({ error: error.message });
       }
     }
 
     const handleSpeechStartedEvent = () => {
-      console.log("🔊 Speech started detected from OpenAI");
+      console.log("?? Speech started detected from OpenAI");
 
       if (markQueue.length > 0 && responseStartTimestampTwilio != null) {
         const elapsedTime = latestMediaTimestamp - responseStartTimestampTwilio;
-        console.log(`⏱️ Truncating last assistant item at ${elapsedTime} ms`);
+        console.log(`?? Truncating last assistant item at ${elapsedTime} ms`);
         if (lastAssistantItem) {
-          console.log("🔊 Speech truncated!!");
+          console.log("?? Speech truncated!!");
           openAiWs.send(
             JSON.stringify({
               type: "conversation.item.truncate",
@@ -205,7 +225,7 @@ fastify.register(async (fastify) => {
     };
 
     openAiWs.on("open", () => {
-      console.log("🧠 Connessione OpenAI attiva");
+      console.log("?? Connessione OpenAI attiva");
       initializeSession();
     });
 
@@ -214,7 +234,7 @@ fastify.register(async (fastify) => {
         const msg = JSON.parse(data);
 
         if (msg.type === "input_audio_buffer.committed") {
-          console.log("🎯 INPUT COMMITTED - START RESPONSE");
+          console.log("?? INPUT COMMITTED - START RESPONSE");
           openAiWs.send(
             JSON.stringify({
               type: "response.create",
@@ -250,7 +270,7 @@ fastify.register(async (fastify) => {
 
           if (speechTimeout) clearTimeout(speechTimeout);
           speechTimeout = setTimeout(() => {
-            console.warn("⏰ [TIMEOUT] Forcing speech_stopped after 8s");
+            console.warn("? [TIMEOUT] Forcing speech_stopped after 8s");
             NotYetCommitted = false;
             GoAppend = true;
             if (openAiWs.readyState === WebSocket.OPEN) {
@@ -260,7 +280,7 @@ fastify.register(async (fastify) => {
         }
 
         if (msg.type === "input_audio_buffer.speech_stopped") {
-          console.log("🛑 SPEECH STOPPED");
+          console.log("?? SPEECH STOPPED");
 
           if (speechTimeout) {
             clearTimeout(speechTimeout);
@@ -271,49 +291,36 @@ fastify.register(async (fastify) => {
             openAiWs.send(JSON.stringify({ type: "input_audio_buffer.commit" }));
             NotYetCommitted = false;
             GoAppend = false;
-            console.log("✅ speech_stopped naturale, commit inviato");
+            console.log("? speech_stopped naturale, commit inviato");
           } else {
-            console.log("ℹ️ speech_stopped ma già committato, nessuna azione");
+            console.log("?? speech_stopped ma già committato, nessuna azione");
           }
         }
 
-        if (msg.type === "response.output_item.added") {
-          if (msg.item && msg.item.type === "function_call") {
-            console.log("🛠 [FUNCTION CALL DETECTED]:", msg.item.name);
-          }
-        }
-
-        if (msg.type === "response.function_call_arguments.delta") {
-          console.log("🧩 [FUNCTION ARGS DELTA]:", msg.delta);
-        }
-
-        if (msg.type === "response.function_call_arguments.done") {
-          console.log("✅ [FUNCTION CALL COMPLETE]");
-          console.log("   Function:", msg.name);
-          console.log("   Arguments:", msg.arguments);
-          console.log("   Call ID:", msg.call_id);
-
-          const functionName = msg.name;
-          const args = JSON.parse(msg.arguments);
-
-          const result = await handleFunctionCall(functionName, args);
-
-          openAiWs.send(
-            JSON.stringify({
-              type: "conversation.item.create",
-              item: {
-                type: "function_call_output",
-                call_id: msg.call_id,
-                output: result,
-              },
-            })
-          );
-
-          openAiWs.send(JSON.stringify({ type: "response.create" }));
-        }
+        // ? GESTIONE FUNCTION CALLS
+                if (msg.type === 'response.function_call_arguments.done') {
+                    console.log('?? Function call:', msg.name);
+                    const functionName = msg.name;
+                    const args = JSON.parse(msg.arguments);
+                    
+                    const result = await handleFunctionCall(functionName, args);
+                    
+                    openAiWs.send(JSON.stringify({
+                        type: 'conversation.item.create',
+                        item: {
+                            type: 'function_call_output',
+                            call_id: msg.call_id,
+                            output: result,
+                        }
+                    }));
+                    
+                    openAiWs.send(JSON.stringify({
+                        type: 'response.create'
+                    }));
+                }
 
         if (msg.type === "response.done") {
-          console.log("✅ RESPONSE DONE");
+          console.log("? RESPONSE DONE");
           GoAppend = true;
         }
       } catch (err) {
@@ -339,13 +346,13 @@ fastify.register(async (fastify) => {
             break;
           case "start":
             streamSid = data.start.streamSid;
-            console.log("🚀 Stream started. SID:", streamSid);
+            console.log("?? Stream started. SID:", streamSid);
             break;
           case "mark":
             if (markQueue.length > 0) markQueue.shift();
             break;
           default:
-            console.log("ℹ️ [OTHER EVENT]", data.event);
+            console.log("?? [OTHER EVENT]", data.event);
         }
       } catch (err) {
         console.error("Errore parsing da Twilio:", err);
@@ -353,9 +360,9 @@ fastify.register(async (fastify) => {
     });
 
     conn.on("close", () => {
-      console.log("❌ Twilio WebSocket connection closed");
+      console.log("? Twilio WebSocket connection closed");
       if (openAiWs.readyState === WebSocket.OPEN) {
-        console.log("🔒 Closing OpenAI WebSocket as well");
+        console.log("?? Closing OpenAI WebSocket as well");
         openAiWs.close();
       }
     });
@@ -371,5 +378,5 @@ fastify.listen({ port: PORT, host: "0.0.0.0" }, (err) => {
     console.error("Errore di avvio:", err);
     process.exit(1);
   }
-  console.log(`🚀 Server avviato su http://0.0.0.0:${PORT}`);
+  console.log(`?? Server avviato su http://0.0.0.0:${PORT}`);
 });
