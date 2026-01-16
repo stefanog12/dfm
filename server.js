@@ -25,7 +25,14 @@ const fastify = Fastify({ logger: true });
 fastify.register(fastifyFormBody);
 fastify.register(fastifyWs);
 
-const BASE_SYSTEM_MESSAGE = 'You are a friendly and concise AI voice assistant. Keep your answers short and conversational, like a real phone call. Your voice and personality should be warm and engaging, with a lively and playful tone. If interacting in a non-English language, start by using the standard accent or dialect familiar to the user. Prefer sentences under 15 seconds. If the user wants more, ask "Do you want me to continue?"';
+const BASE_SYSTEM_MESSAGE = 'You are a friendly and concise AI voice assistant. Keep your answers short and conversational, like a real phone call. 
+Your voice and personality should be warm and engaging, with a lively and playful tone. 
+If interacting in a non-English language, start by using the standard accent or dialect familiar to the user. 
+Prefer sentences under 10 seconds. Keep responses SHORT (2-3 sentences max). If the user wants more, ask "Do you want me to continue?".
+IMPORTANT: When the customer mentions scheduling, appointments, or asks about availability:
+- Use the find_available_slots function to check calendar availability
+- Use the create_appointment function to book appointments after confirming details';
+
 const VOICE = 'alloy';
 const PORT = process.env.PORT || 3000;
 
@@ -140,7 +147,9 @@ fastify.register(async (fastify) => {
                     voice: VOICE,
                     instructions: BASE_SYSTEM_MESSAGE,
                     modalities: ["text", "audio"],
-					temperature: 0.8
+					temperature: 0.8,
+					tools: CALENDAR_TOOLS,              // QUESTO
+					tool_choice: "auto"					// QUESTO
                 }
             };
 			
@@ -153,6 +162,8 @@ fastify.register(async (fastify) => {
                 console.error('ðŸš¨ [SESSION INIT] Failed to send session update:', err);
             }
         };
+		
+		
 		
 		 // Gestione chiamate a funzioni
         async function handleFunctionCall(functionName, args) {
@@ -331,30 +342,44 @@ fastify.register(async (fastify) => {
 					}
 				}
 				
-				// Function call richiesta
-                if (msg.type === 'response.function_call_arguments.done') {
-                    console.log('!! Gestione Calendar');
-					const functionName = msg.name;
-                    const args = JSON.parse(msg.arguments);
-                    
-                    const result = await handleFunctionCall(functionName, args);
-                    
-                    // Invia il risultato a OpenAI
-                    openAiWs.send(JSON.stringify({
-                        type: 'conversation.item.create',
-                        item: {
-                            type: 'function_call_output',
-                            call_id: msg.call_id,
-                            output: result,
-                        }
-                    }));
-                    
-                    // Richiedi risposta con il risultato
-                    openAiWs.send(JSON.stringify({
-                        type: 'response.create'
-                    }));
-                }
-				
+if (msg.type === 'response.output_item.added') {
+    console.log('?? [OUTPUT ITEM]:', msg.item);
+    if (msg.item && msg.item.type === 'function_call') {
+        console.log('?? [FUNCTION CALL DETECTED]:', msg.item.name);
+    }
+}
+
+if (msg.type === 'response.function_call_arguments.delta') {
+    console.log('?? [FUNCTION ARGS DELTA]:', msg.delta);
+}
+
+if (msg.type === 'response.function_call_arguments.done') {
+    console.log('? [FUNCTION CALL COMPLETE]');
+    console.log('   Function:', msg.name);
+    console.log('   Arguments:', msg.arguments);
+    console.log('   Call ID:', msg.call_id);
+    
+    const functionName = msg.name;
+    const args = JSON.parse(msg.arguments);
+    
+    const result = await handleFunctionCall(functionName, args);
+    
+    // Invia il risultato
+    openAiWs.send(JSON.stringify({
+        type: 'conversation.item.create',
+        item: {
+            type: 'function_call_output',
+            call_id: msg.call_id,
+            output: result,
+        }
+    }));
+    
+    // Richiedi risposta con il risultato
+    openAiWs.send(JSON.stringify({
+        type: 'response.create'
+    }));
+}
+								
 				// Reinvia session.update dopo session.created
 				if (msg.type === "response.done") {
 					console.log("RESPONSE DONE");
@@ -378,7 +403,7 @@ fastify.register(async (fastify) => {
                        // console.log(`ðŸŽ™ï¸ [MEDIA] Timestamp: ${latestMediaTimestamp}`);
 					
 					    if (openAiWs.readyState === WebSocket.OPEN && GoAppend) {
-                            console.log('âž¡ï¸ Sending audio to OpenAI (buffer.append)');
+                            // console.log('âž¡ï¸ Sending audio to OpenAI (buffer.append)');
                             openAiWs.send(JSON.stringify({
                                 type: 'input_audio_buffer.append',
                                 audio: data.media.payload
