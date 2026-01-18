@@ -74,8 +74,9 @@ IMPORTANT FUNCTION USAGE:
 
 fastify.get('/', async (req, reply) => {
     const isAuth = await googleClient.isAuthenticated();
-    const baseUrl = process.env.RAILWAY_PUBLIC_DOMAIN 
-        ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`
+    const isProduction = process.env.NODE_ENV === 'production';
+    const baseUrl = isProduction 
+        ? 'https://dfm-production-36a5.up.railway.app'
         : 'http://localhost:3000';
     
     reply.send({ 
@@ -83,6 +84,17 @@ fastify.get('/', async (req, reply) => {
         calendar: isAuth ? 'Connesso ?' : 'Non autenticato ??',
         authUrl: isAuth ? null : `${baseUrl}/oauth/authorize`
     });
+});
+
+fastify.get('/oauth/authorize', async (req, reply) => {
+    try {
+        const authUrl = googleClient.generateAuthUrl();
+        console.log('?? Redirect a Google OAuth');
+        reply.redirect(authUrl);
+    } catch (error) {
+        console.error('? Errore:', error);
+        reply.status(500).send('Errore: ' + error.message);
+    }
 });
 
 fastify.get('/oauth/callback', async (req, reply) => {
