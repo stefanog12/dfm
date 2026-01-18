@@ -3,9 +3,7 @@ import WebSocket from "ws";
 import dotenv from "dotenv";
 import fastifyFormBody from "@fastify/formbody";
 import fastifyWs from "@fastify/websocket";
-import express from 'express';
 import * as calendar from './calendar.js';
-import authRoutes from './auth.js';
 import * as googleClient from './googleClient.js';
 
 dotenv.config();
@@ -16,18 +14,12 @@ if (!OPENAI_API_KEY) {
   process.exit(1);
 }
 
-// Express app per OAuth routes
-const expressApp = express();
-expressApp.use('/', authRoutes);
-
-// Start Express server per OAuth
-const EXPRESS_PORT = 3001;
-expressApp.listen(EXPRESS_PORT, () => {
-    console.log(`?? OAuth server su http://localhost:${EXPRESS_PORT}`);
-});
-
 // Inizializza Google Client
 await googleClient.initialize();
+
+const fastify = Fastify({ logger: true });
+fastify.register(fastifyFormBody);
+fastify.register(fastifyWs);
 
 const VOICE = "alloy";
 const PORT = process.env.PORT || 3000;
@@ -80,16 +72,110 @@ IMPORTANT FUNCTION USAGE:
 - Always collect: name, phone, and address before creating appointment
 `;
 
-const fastify = Fastify({ logger: true });
-fastify.register(fastifyFormBody);
-fastify.register(fastifyWs);
-fastify.register(authRoutes);
-
 fastify.get('/', async (req, reply) => {
     const isAuth = await googleClient.isAuthenticated();
+    const baseUrl = process.env.RAILWAY_PUBLIC_DOMAIN 
+        ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`
+        : 'http://localhost:3000';
+    
     reply.send({ 
         message: '?? Server attivo',
-        calendar: isAuth ? 'Connesso' : 'Non autenticato - visita http://localhost:3001/oauth/authorize'
+        calendar: isAuth ? 'Connesso ?' : 'Non autenticato ??',
+        authUrl: isAuth ? null : `${baseUrl}/oauth/authorize`
+    });
+});
+
+fastify.get('/oauth/callback', async (req, reply) => {
+    const { code, error } = req.query;
+    
+    if (error) {
+        console.error('? OAuth error:', error);
+        return reply.status(400).send('Autenticazione fallita: ' + error);
+    }
+    
+    if (!code) {
+        return reply.status(400).send('Codice mancante');
+    }
+    
+    try {
+        console.log('?? Scambio codice...');
+        await googleClient.getTokenFromCode(code);
+        
+        const isProduction = process.env.NODE_ENV === 'production';
+        
+        reply.type('text/html').send(`
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <title>Autenticazione Riuscita</title>
+                <style>
+                    body {
+                        font-family: Arial, sans-serif;
+                        display: flex;
+                        justify-content: center;
+                        align-items: center;
+                        min-height: 100vh;
+                        margin: 0;
+                        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                        padding: 20px;
+                    }
+                    .container {
+                        background: white;
+                        padding: 40px;
+                        border-radius: 10px;
+                        box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+                        max-width: 600px;
+                    }
+                    h1 { color: #4CAF50; margin-bottom: 20px; }
+                    p { color: #666; font-size: 16px; line-height: 1.6; }
+                    .icon { font-size: 60px; margin-bottom: 20px; text-align: center; }
+                    .code-box {
+                        background: #f5f5f5;
+                        padding: 15px;
+                        border-radius: 5px;
+                        margin: 20px 0;
+                        overflow-x: auto;
+                        display: ${isProduction ? 'block' : 'none'};
+                    }
+                    pre { margin: 0; font-size: 12px; }
+                    .warning {
+                        background: #fff3cd;
+                        border-left: 4px solid #ffc107;
+                        padding: 15px;
+                        margin: 20px 0;
+                        display: ${isProduction ? 'block' : 'none'};
+                    }
+                </style>
+            </head>
+            <body>
+                <div class="container">
+                    <div class="icon">?</div>
+                    <h1>Autenticazione Riuscita!</h1>
+                    <p><strong>Google Calendar connesso con successo.</strong></p>
+                    
+                    ${isProduction ? `
+                    <div class="warning">
+                        <strong>?? IMPORTANTE PER RAILWAY:</strong>
+                        <p>Controlla i log del server. Troverai il token da copiare e aggiungere come variabile <code>GOOGLE_TOKEN</code> su Railway.</p>
+                    </div>
+                    ` : '<p>Puoi chiudere questa finestra.</p>'}
+                </div>
+            </body>
+            </html>
+        `);
+        
+        console.log('? Autenticazione completata!');
+    } catch (error) {
+        console.error('? Errore:', error);
+        reply.status(500).send('Errore: ' + error.message);
+    }
+});
+
+fastify.get('/oauth/status', async (req, reply) => {
+    const isAuth = await googleClient.isAuthenticated();
+    reply.send({
+        authenticated: isAuth,
+        message: isAuth ? 'Connesso' : 'Non autenticato'
     });
 });
 
