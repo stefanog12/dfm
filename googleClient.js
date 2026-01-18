@@ -1,20 +1,30 @@
 import { google } from 'googleapis';
 import fs from 'fs/promises';
-import path from 'path';
 
-const CREDENTIALS_PATH = './credentials.json';
-const TOKEN_PATH = './token.json';
 const REDIRECT_URI = process.env.REDIRECT_URI || 'https://dfm-production-36a5.up.railway.app/oauth2/callback';
+const IS_PRODUCTION = process.env.NODE_ENV === 'production';
 
 let oauth2Client = null;
+let tokenData = null; // In-memory token storage per Railway
 
 /**
- * Carica le credenziali e crea il client OAuth2
+ * Carica credenziali da variabile d'ambiente (Railway) o file (locale)
  */
 async function loadCredentials() {
     try {
-        const content = await fs.readFile(CREDENTIALS_PATH, 'utf-8');
-        const credentials = JSON.parse(content);
+        let credentials;
+        
+        if (IS_PRODUCTION && process.env.GOOGLE_CREDENTIALS) {
+            // Railway: usa variabile d'ambiente
+            console.log('📦 Caricando credenziali da variabile d\'ambiente');
+            credentials = JSON.parse(process.env.GOOGLE_CREDENTIALS);
+        } else {
+            // Locale: usa file
+            console.log('📁 Caricando credenziali da file');
+            const content = await fs.readFile('./credentials.json', 'utf-8');
+            credentials = JSON.parse(content);
+        }
+        
         const { client_id, client_secret } = credentials.web || credentials.installed;
         
         oauth2Client = new google.auth.OAuth2(
@@ -24,36 +34,73 @@ async function loadCredentials() {
         );
         
         console.log('✅ Credenziali Google caricate');
+        console.log('🔗 Redirect URI:', REDIRECT_URI);
         return oauth2Client;
     } catch (error) {
         console.error('❌ Errore caricamento credenziali:', error.message);
-        throw new Error('File credentials.json non trovato o non valido');
+        throw new Error('Credenziali Google non trovate. Imposta GOOGLE_CREDENTIALS su Railway.');
     }
 }
 
 /**
- * Carica il token salvato se esiste
+ * Carica token da variabile d'ambiente (Railway) o file (locale)
  */
 async function loadToken() {
     try {
-        const token = await fs.readFile(TOKEN_PATH, 'utf-8');
-        const tokenData = JSON.parse(token);
+        let token;
+        
+        if (IS_PRODUCTION && process.env.GOOGLE_TOKEN) {
+            // Railway: usa variabile d'ambiente
+            console.log('🔑 Caricando token da variabile d\'ambiente');
+            token = process.env.GOOGLE_TOKEN;
+        } else {
+            // Locale: usa file
+            console.log('🔑 Caricando token da file');
+            token = await fs.readFile('./token.json', 'utf-8');
+        }
+        
+        tokenData = JSON.parse(token);
         oauth2Client.setCredentials(tokenData);
         console.log('✅ Token Google caricato');
         return true;
     } catch (error) {
         console.log('⚠️ Token non trovato - necessaria autenticazione');
+        console.log('👉 Visita: ' + REDIRECT_URI.replace('/oauth/callback', '/oauth/authorize'));
         return false;
     }
 }
 
 /**
- * Salva il token su file
+ * Salva token
+ * IMPORTANTE: Su Railway, dopo l'autenticazione, devi copiare il token
+ * dalla console e aggiungerlo manualmente come variabile GOOGLE_TOKEN
  */
 async function saveToken(tokens) {
     try {
-        await fs.writeFile(TOKEN_PATH, JSON.stringify(tokens, null, 2));
-        console.log('✅ Token salvato');
+        tokenData = tokens;
+        const tokenString = JSON.stringify(tokens, null, 2);
+        
+        if (IS_PRODUCTION) {
+            // Railway: stampa il token da copiare manualmente
+            console.log('');
+            console.log('='.repeat(80));
+            console.log('🔐 TOKEN GENERATO - COPIA E SALVA SU RAILWAY');
+            console.log('='.repeat(80));
+            console.log('');
+            console.log('1. Vai su Railway → Variabili');
+            console.log('2. Aggiungi nuova variabile:');
+            console.log('   Nome: GOOGLE_TOKEN');
+            console.log('   Valore: (copia il JSON qui sotto)');
+            console.log('');
+            console.log(tokenString);
+            console.log('');
+            console.log('='.repeat(80));
+            console.log('');
+        } else {
+            // Locale: salva su file
+            await fs.writeFile('./token.json', tokenString);
+            console.log('✅ Token salvato su file');
+        }
     } catch (error) {
         console.error('❌ Errore salvataggio token:', error);
     }
@@ -70,14 +117,14 @@ function generateAuthUrl() {
     const authUrl = oauth2Client.generateAuthUrl({
         access_type: 'offline',
         scope: ['https://www.googleapis.com/auth/calendar'],
-        prompt: 'consent', // Forza il consenso per ottenere refresh token
+        prompt: 'consent',
     });
     
     return authUrl;
 }
 
 /**
- * Scambia il codice di autorizzazione con i token
+ * Scambia codice con token
  */
 async function getTokenFromCode(code) {
     if (!oauth2Client) {
@@ -96,7 +143,7 @@ async function getTokenFromCode(code) {
 }
 
 /**
- * Ottieni il client autenticato
+ * Ottieni client autenticato
  */
 async function getAuthenticatedClient() {
     if (!oauth2Client) {
@@ -106,14 +153,14 @@ async function getAuthenticatedClient() {
     const hasToken = await loadToken();
     
     if (!hasToken) {
-        throw new Error('Autenticazione necessaria - visita /oauth/authorize');
+        throw new Error('Autenticazione necessaria');
     }
     
     return oauth2Client;
 }
 
 /**
- * Verifica se il client è autenticato
+ * Verifica autenticazione
  */
 async function isAuthenticated() {
     try {
@@ -127,7 +174,7 @@ async function isAuthenticated() {
 }
 
 /**
- * Inizializza il client OAuth2
+ * Inizializza
  */
 async function initialize() {
     await loadCredentials();
