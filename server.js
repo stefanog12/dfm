@@ -334,16 +334,16 @@ fastify.register(async (fastify) => {
 
         if (msg.type === "input_audio_buffer.committed") {
           console.log("?? INPUT COMMITTED - START RESPONSE");
-  //        openAiWs.send(
-  //          JSON.stringify({
-  //            type: "response.create",
-  //            response: {
-  //              modalities: ["audio", "text"],
-  //              voice: VOICE,
-  //              temperature: 0.8,
-  //            },
-  //          })
-  //        );
+			openAiWs.send(
+				JSON.stringify({
+				type: "response.create",
+				response: {
+					modalities: ["audio", "text"],
+					voice: VOICE,
+					temperature: 0.8,
+				},
+				})
+			);
         }
 
         if (msg.type === "response.audio.delta" && msg.delta) {
@@ -398,9 +398,7 @@ fastify.register(async (fastify) => {
 
         // ? GESTIONE FUNCTION CALLS
                 if (msg.type === 'response.function_call_arguments.done') {
-					NotYetCommitted = false;
-					GoAppend = false;
-                    console.log('?? Function call:', msg.name);
+					console.log('?? Function call:', msg.name);
                     const functionName = msg.name;
                     const args = JSON.parse(msg.arguments);
                     
@@ -417,9 +415,9 @@ fastify.register(async (fastify) => {
                         }
                     }));
                     
-                    openAiWs.send(JSON.stringify({
-                        type: 'response.create'
-                    }));
+  //                  openAiWs.send(JSON.stringify({
+  //                      type: 'response.create'
+  //                  }));
                 }
 
         if (msg.type === "response.done") {
