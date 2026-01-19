@@ -215,6 +215,7 @@ fastify.register(async (fastify) => {
     let NotYetCommitted = false;
     let GoAppend = true;
     let speechTimeout = null;
+	let pendingFunctionOutput = null; 		// per memorizzare i risultati del calendario
     const MAX_SPEECH_DURATION = 8000;
 
     const openAiWs = new WebSocket(
@@ -406,24 +407,51 @@ fastify.register(async (fastify) => {
                     
 					console.log("?? Risultato funzione:", JSON.parse(result));
 					
-                    openAiWs.send(JSON.stringify({
-                        type: 'conversation.item.create',
-                        item: {
-                            type: 'function_call_output',
-                            call_id: msg.call_id,
-                            output: result,
-                        }
-                    }));
-                    
-  //                  openAiWs.send(JSON.stringify({
-  //                      type: 'response.create'
-  //                  }));
+                    // ? SALVA il risultato ma NON inviare ancora
+      pendingFunctionOutput = {
+        call_id: msg.call_id,
+        output: result
+      };
+      
+      console.log("?? Risultato salvato, aspetto response.done");
+					
+	// TOLTO LA RESPONSE CREATE E LA METTO SOTTO ???
+	
                 }
 
         if (msg.type === "response.done") {
           console.log("? RESPONSE DONE");
-          GoAppend = true;
+
+		  
+if (pendingFunctionOutput) {
+      console.log("?? Invio risultato funzione e creo nuova risposta");
+	  
+// ??? MESSA QUA
+      
+      // Invia il risultato della funzione
+      openAiWs.send(JSON.stringify({
+        type: 'conversation.item.create',
+        item: {
+          type: 'function_call_output',
+          call_id: pendingFunctionOutput.call_id,
+          output: pendingFunctionOutput.output
         }
+      }));
+      
+      // Forza la nuova risposta
+      openAiWs.send(JSON.stringify({
+        type: 'response.create'
+      }));
+      
+      // Reset
+      pendingFunctionOutput = null;		 
+		 
+      
+        }
+		
+		GoAppend = true;
+		
+		}
       } catch (err) {
         console.error("Errore parsing da OpenAI:", err);
       }
