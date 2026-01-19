@@ -329,6 +329,8 @@ fastify.register(async (fastify) => {
     openAiWs.on("message", async (data) => {
       try {
         const msg = JSON.parse(data);
+		
+		console.log(JSON.parse(data));
 
         if (msg.type === "input_audio_buffer.committed") {
           console.log("?? INPUT COMMITTED - START RESPONSE");
@@ -396,12 +398,16 @@ fastify.register(async (fastify) => {
 
         // ? GESTIONE FUNCTION CALLS
                 if (msg.type === 'response.function_call_arguments.done') {
+					NotYetCommitted = false;
+					GoAppend = false;
                     console.log('?? Function call:', msg.name);
                     const functionName = msg.name;
                     const args = JSON.parse(msg.arguments);
                     
                     const result = await handleFunctionCall(functionName, args);
                     
+					console.log('?? Result =', item.output);
+					
                     openAiWs.send(JSON.stringify({
                         type: 'conversation.item.create',
                         item: {
