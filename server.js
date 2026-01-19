@@ -331,9 +331,7 @@ fastify.register(async (fastify) => {
       try {
         const msg = JSON.parse(data);
 		
-		console.log(JSON.parse(data));
-
-        if (msg.type === "input_audio_buffer.committed") {
+		if (msg.type === "input_audio_buffer.committed") {
           console.log("?? INPUT COMMITTED - START RESPONSE");
 			openAiWs.send(
 				JSON.stringify({
