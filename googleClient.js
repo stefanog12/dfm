@@ -1,7 +1,7 @@
 import { google } from 'googleapis';
 import fs from 'fs/promises';
 
-const REDIRECT_URI = process.env.REDIRECT_URI || 'https://dfm-production-36a5.up.railway.app/oauth2/callback';
+const REDIRECT_URI = process.env.REDIRECT_URI || 'https://dfm-production-36a5.up.railway.app/oauth/callback';
 const IS_PRODUCTION = process.env.NODE_ENV === 'production';
 
 let oauth2Client = null;
