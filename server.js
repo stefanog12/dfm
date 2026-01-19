@@ -406,7 +406,7 @@ fastify.register(async (fastify) => {
                     
                     const result = await handleFunctionCall(functionName, args);
                     
-					console.log('?? Result =', item.output);
+					console.log("📦 Risultato funzione:", JSON.parse(result));
 					
                     openAiWs.send(JSON.stringify({
                         type: 'conversation.item.create',
