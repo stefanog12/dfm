@@ -257,7 +257,7 @@ fastify.register(async (fastify) => {
       console.log("?? [FUNCTION CALL]", functionName, args);
       try {
         if (functionName === "find_available_slots") {
-          const result = await calendar.parseSchedulingRequest(fastify, args.request);
+          const result = await calendar.parseSchedulingRequest(args.request);
           return JSON.stringify(result);
         }
 
@@ -267,7 +267,6 @@ fastify.register(async (fastify) => {
           const appointmentDate = new Date(year, month - 1, day, hour, minute);
 
           const result = await calendar.createAppointment(
-            fastify,
             appointmentDate,
             args.customer_name,
             args.customer_phone,
