@@ -335,16 +335,16 @@ fastify.register(async (fastify) => {
 
         if (msg.type === "input_audio_buffer.committed") {
           console.log("?? INPUT COMMITTED - START RESPONSE");
-//			openAiWs.send(
-//				JSON.stringify({
-//				type: "response.create",
-//				response: {
-//					modalities: ["audio", "text"],
-//					voice: VOICE,
-//					temperature: 0.8,
-//				},
-//				})
-//			);
+			openAiWs.send(
+				JSON.stringify({
+				type: "response.create",
+				response: {
+					modalities: ["audio", "text"],
+					voice: VOICE,
+					temperature: 0.8,
+				},
+				})
+			);
         }
 
         if (msg.type === "response.audio.delta" && msg.delta) {
@@ -398,61 +398,37 @@ fastify.register(async (fastify) => {
         }
 
         // ? GESTIONE FUNCTION CALLS
-                if (msg.type === 'response.function_call_arguments.done') {
-					console.log('?? Function call:', msg.name);
-                    const functionName = msg.name;
-                    const args = JSON.parse(msg.arguments);
+        if (msg.type === 'response.function_call_arguments.done') {
+			console.log('?? Function call:', msg.name);
+            const functionName = msg.name;
+            const args = JSON.parse(msg.arguments);
                     
-                    const result = await handleFunctionCall(functionName, args);
+            const result = await handleFunctionCall(functionName, args);
                     
-					console.log("?? Risultato funzione:", JSON.parse(result));
-					
-                    // ? SALVA il risultato ma NON inviare ancora
-      pendingFunctionOutput = {
-        call_id: msg.call_id,
-        output: result
-      };
+			console.log("?? Risultato funzione:", JSON.parse(result));
+				
+			// Invia il risultato della funzione
+			openAiWs.send(JSON.stringify({
+				type: 'conversation.item.create',
+				item: {
+					type: 'function_call_output',
+					call_id: msg.call_id,
+					output: result
+				}	
+			}));
       
-      console.log("?? Risultato salvato, aspetto response.done");
-					
-	// TOLTO LA RESPONSE CREATE E LA METTO SOTTO ???
-	
-                }
+			// Forza la nuova risposta
+			openAiWs.send(JSON.stringify({
+				type: 'response.create'
+			}));
+        }
 
         if (msg.type === "response.done") {
-          console.log("? RESPONSE DONE");
-
-		  
-if (pendingFunctionOutput) {
-      console.log("?? Invio risultato funzione e creo nuova risposta");
-	  
-// ??? MESSA QUA
-      
-      // Invia il risultato della funzione
-      openAiWs.send(JSON.stringify({
-        type: 'conversation.item.create',
-        item: {
-          type: 'function_call_output',
-          call_id: pendingFunctionOutput.call_id,
-          output: pendingFunctionOutput.output
-        }
-      }));
-      
-      // Forza la nuova risposta
-      openAiWs.send(JSON.stringify({
-        type: 'response.create'
-      }));
-      
-      // Reset
-      pendingFunctionOutput = null;		 
-		 
-      
-        }
-		
-		GoAppend = true;
-		
+			console.log("? RESPONSE DONE");
+			GoAppend = true;
 		}
-      } catch (err) {
+      
+	  } catch (err) {
         console.error("Errore parsing da OpenAI:", err);
       }
     });
