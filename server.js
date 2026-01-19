@@ -334,16 +334,16 @@ fastify.register(async (fastify) => {
 
         if (msg.type === "input_audio_buffer.committed") {
           console.log("?? INPUT COMMITTED - START RESPONSE");
-          openAiWs.send(
-            JSON.stringify({
-              type: "response.create",
-              response: {
-                modalities: ["audio", "text"],
-                voice: VOICE,
-                temperature: 0.8,
-              },
-            })
-          );
+  //        openAiWs.send(
+  //          JSON.stringify({
+  //            type: "response.create",
+  //            response: {
+  //              modalities: ["audio", "text"],
+  //              voice: VOICE,
+  //              temperature: 0.8,
+  //            },
+  //          })
+  //        );
         }
 
         if (msg.type === "response.audio.delta" && msg.delta) {
@@ -406,7 +406,7 @@ fastify.register(async (fastify) => {
                     
                     const result = await handleFunctionCall(functionName, args);
                     
-					console.log("📦 Risultato funzione:", JSON.parse(result));
+					console.log("?? Risultato funzione:", JSON.parse(result));
 					
                     openAiWs.send(JSON.stringify({
                         type: 'conversation.item.create',
