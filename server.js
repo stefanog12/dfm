@@ -285,6 +285,7 @@ fastify.register(async (fastify) => {
 
     const handleSpeechStartedEvent = () => {
       console.log("?? Speech started detected from OpenAI");
+	  NotYetCommitted = true;
 
       if (markQueue.length > 0 && responseStartTimestampTwilio != null) {
         const elapsedTime = latestMediaTimestamp - responseStartTimestampTwilio;
@@ -302,7 +303,6 @@ fastify.register(async (fastify) => {
         }
         conn.send(JSON.stringify({ event: "clear", streamSid }));
         markQueue = [];
-        NotYetCommitted = true;
         lastAssistantItem = null;
         responseStartTimestampTwilio = null;
       }
@@ -329,6 +329,7 @@ fastify.register(async (fastify) => {
     openAiWs.on("message", async (data) => {
       try {
         const msg = JSON.parse(data);
+		console.log("?? MESSAGE", msg);
 		
 		if (msg.type === "input_audio_buffer.committed") {
 			console.log("?? INPUT COMMITTED - START RESPONSE");
