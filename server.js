@@ -437,8 +437,9 @@ fastify.register(async (fastify) => {
 
         switch (data.event) {
           case "media":
-            latestMediaTimestamp = data.media.timestamp;
+            latestMediaTimestamp = data.media.timestamp;	
             if (openAiWs.readyState === WebSocket.OPEN && GoAppend) {
+			  console.log("Media : ", latestMediaTimestamp);
               openAiWs.send(
                 JSON.stringify({
                   type: "input_audio_buffer.append",
