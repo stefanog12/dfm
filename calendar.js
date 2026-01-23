@@ -7,8 +7,8 @@ const CALENDAR_ID = process.env.GOOGLE_CALENDAR_ID || 'primary';
 const WORKING_HOURS = {
     start: 8,
     end: 17,
-    lunchStart: 13,
-    lunchEnd: 14,
+    lunchStart: 12,
+    lunchEnd: 13,
 };
 
 const SLOT_DURATION_MINUTES = 120; // 2 ore
