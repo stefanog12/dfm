@@ -24,6 +24,11 @@ fastify.register(fastifyWs);
 const VOICE = "alloy";
 const PORT = process.env.PORT || 3000;
 
+// Crea un buffer di silenzio (500ms a 24kHz mono, 16-bit PCM)
+const samples = 8000 * 0.5; // 4000 campioni
+const silenceBuffer = Buffer.alloc(samples, 0xFF); // 0xFF = silenzio PCMU
+const silenceBase64 = silenceBuffer.toString("base64");
+
 const CALENDAR_TOOLS = [
   {
     type: "function",
@@ -329,11 +334,18 @@ fastify.register(async (fastify) => {
     openAiWs.on("message", async (data) => {
       try {
         const msg = JSON.parse(data);
-		console.log("?? MESSAGE", msg);
+		// console.log("?? MESSAGE", msg);
 		
 		if (msg.type === "input_audio_buffer.committed") {
 			console.log("?? INPUT COMMITTED - START RESPONSE");
 		    GoAppend = false;
+			// Invia al VAD 500 msec di silenzio per forzare anche lo speech.stopped 
+			console.log("?? 500 silence");
+			openAiWs.send(JSON.stringify({
+					type: 'input_audio_buffer.append',
+					audio: silenceBase64
+			}));
+			
 			openAiWs.send(JSON.stringify({
 				type: "response.create",
 				response: {
@@ -436,7 +448,7 @@ fastify.register(async (fastify) => {
           case "media":
             latestMediaTimestamp = data.media.timestamp;	
             if (openAiWs.readyState === WebSocket.OPEN && GoAppend) {
-			  console.log("Media : ", latestMediaTimestamp);
+			  // console.log("Media : ", latestMediaTimestamp);
               openAiWs.send(
                 JSON.stringify({
                   type: "input_audio_buffer.append",
