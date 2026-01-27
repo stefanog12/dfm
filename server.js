@@ -131,7 +131,6 @@ Cliente: "Sì"
 Tu: [usa create_appointment]
 Tu: "Perfetto! Ho prenotato il suo appuntamento per oggi alle 15:00. A presto!"
 `;
-`;
 
 fastify.get('/', async (req, reply) => {
     const isAuth = await googleClient.isAuthenticated();
