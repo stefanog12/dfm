@@ -219,6 +219,7 @@ fastify.register(async (fastify) => {
     let responseStartTimestampTwilio = null;
     let NotYetCommitted = false;
     let GoAppend = true;
+	let SilenceToApply = true;
     let speechTimeout = null;
     const MAX_SPEECH_DURATION = 8000;
 
@@ -339,12 +340,14 @@ fastify.register(async (fastify) => {
 		if (msg.type === "input_audio_buffer.committed") {
 			console.log("?? INPUT COMMITTED - START RESPONSE");
 		    GoAppend = false;
-			// Invia al VAD 500 msec di silenzio per forzare anche lo speech.stopped 
-			console.log("?? 500 silence");
-			openAiWs.send(JSON.stringify({
-					type: 'input_audio_buffer.append',
-					audio: silenceBase64
-			}));
+			if (SilenceToApply) {
+				// Invia al VAD 500 msec di silenzio per forzare anche lo speech.stopped 
+				console.log("?? 500 silence");
+				openAiWs.send(JSON.stringify({
+						type: 'input_audio_buffer.append',
+						audio: silenceBase64
+				}));
+			}
 			
 			openAiWs.send(JSON.stringify({
 				type: "response.create",
@@ -400,6 +403,7 @@ fastify.register(async (fastify) => {
             NotYetCommitted = false;
             console.log("? speech_stopped naturale, commit inviato");
           } else {
+			SilenceToApply = false;
             console.log("?? speech_stopped ma già committato, nessuna azione");
           }
         }
@@ -433,6 +437,7 @@ fastify.register(async (fastify) => {
         if (msg.type === "response.done") {
 			console.log("? RESPONSE DONE");
 			GoAppend = true;
+			SilenceToApply = true;
 		}
       
 	  } catch (err) {
