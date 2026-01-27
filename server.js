@@ -221,7 +221,7 @@ fastify.register(async (fastify) => {
     let GoAppend = true;
 	let SilenceToApply = true;
     let speechTimeout = null;
-    const MAX_SPEECH_DURATION = 6000;
+    const MAX_SPEECH_DURATION = 7000;
 
     const openAiWs = new WebSocket(
       "wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview",
