@@ -221,7 +221,7 @@ fastify.register(async (fastify) => {
     let GoAppend = true;
 	let SilenceToApply = true;
     let speechTimeout = null;
-    const MAX_SPEECH_DURATION = 8000;
+    const MAX_SPEECH_DURATION = 6000;
 
     const openAiWs = new WebSocket(
       "wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview",
@@ -392,6 +392,7 @@ fastify.register(async (fastify) => {
 
         if (msg.type === "input_audio_buffer.speech_stopped") {
           console.log("?? SPEECH STOPPED");
+		  SilenceToApply = false;
 
           if (speechTimeout) {
             clearTimeout(speechTimeout);
@@ -403,7 +404,7 @@ fastify.register(async (fastify) => {
             NotYetCommitted = false;
             console.log("? speech_stopped naturale, commit inviato");
           } else {
-			SilenceToApply = false;
+			
             console.log("?? speech_stopped ma già committato, nessuna azione");
           }
         }
