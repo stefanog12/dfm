@@ -13,6 +13,9 @@ const WORKING_HOURS = {
 
 const SLOT_DURATION_MINUTES = 120; // 2 ore
 
+// Slot fissi: 8:00, 10:00, 13:00, 15:00
+const FIXED_SLOT_HOURS = [8, 10, 13, 15];
+
 /**
  * Verifica se un orario è lavorativo
  */
@@ -25,6 +28,14 @@ function isWorkingHours(date) {
     if (hour >= WORKING_HOURS.lunchStart && hour < WORKING_HOURS.lunchEnd) return false;
     
     return true;
+}
+
+/**
+ * Verifica se una data cade nel weekend
+ */
+function isWeekend(date) {
+    const day = date.getDay();
+    return day === 0 || day === 6;
 }
 
 /**
@@ -48,27 +59,44 @@ export async function getAvailableSlots(startDate, endDate) {
         
         let currentDate = new Date(startDate);
         
+        // Itera giorno per giorno
         while (currentDate < endDate) {
-            if (isWorkingHours(currentDate)) {
-                const slotEnd = new Date(currentDate.getTime() + SLOT_DURATION_MINUTES * 60000);
+            const day = new Date(currentDate);
+            day.setHours(0, 0, 0, 0);
+            
+            // Per ogni giorno, controlla gli slot fissi
+            for (const hour of FIXED_SLOT_HOURS) {
+                const slotStart = new Date(day);
+                slotStart.setHours(hour, 0, 0, 0);
                 
+                // Salta slot nel passato
+                if (slotStart < startDate) continue;
+                if (slotStart >= endDate) break;
+                
+                // Verifica se è orario lavorativo
+                if (!isWorkingHours(slotStart)) continue;
+                
+                const slotEnd = new Date(slotStart.getTime() + SLOT_DURATION_MINUTES * 60000);
+                
+                // Verifica se lo slot è libero
                 const isSlotFree = !events.some(event => {
                     const eventStart = new Date(event.start.dateTime || event.start.date);
                     const eventEnd = new Date(event.end.dateTime || event.end.date);
-                    return (currentDate < eventEnd && slotEnd > eventStart);
+                    return (slotStart < eventEnd && slotEnd > eventStart);
                 });
                 
-                if (isSlotFree && slotEnd.getHours() <= WORKING_HOURS.end) {
+                if (isSlotFree) {
                     availableSlots.push({
-                        start: new Date(currentDate),
+                        start: new Date(slotStart),
                         end: new Date(slotEnd),
-                        date: currentDate.toLocaleDateString('it-IT'),
-                        time: currentDate.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' }),
+                        date: slotStart.toLocaleDateString('it-IT'),
+                        time: slotStart.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' }),
                     });
                 }
             }
             
-            currentDate = new Date(currentDate.getTime() + 30 * 60000);
+            // Passa al giorno successivo
+            currentDate.setDate(currentDate.getDate() + 1);
         }
         
         return availableSlots;
@@ -95,13 +123,12 @@ export async function findFirstAvailableSlot() {
 export async function findSlotsInWeek(weekOffset = 0) {
     const now = new Date();
     
-    // FIX: Calcola lunedì e venerdì partendo da OGGI + weekOffset
     const startOfWeek = new Date(now);
     startOfWeek.setDate(now.getDate() + (weekOffset * 7));
     startOfWeek.setHours(0, 0, 0, 0);
     
     const endOfWeek = new Date(startOfWeek);
-    endOfWeek.setDate(startOfWeek.getDate() + 6); // 7 giorni dalla data iniziale
+    endOfWeek.setDate(startOfWeek.getDate() + 6);
     endOfWeek.setHours(23, 59, 59, 999);
     
     const slots = await getAvailableSlots(startOfWeek, endOfWeek);
@@ -212,7 +239,6 @@ export async function parseSchedulingRequest(userRequest) {
         };
     }
     
-    // FIX: Gestisci "oggi", "domani", "prossima settimana"
     let weekOffset = 0;
     let specificDate = null;
     
@@ -230,6 +256,15 @@ export async function parseSchedulingRequest(userRequest) {
     let period = 'any';
     if (request.includes('pomeriggio')) period = 'afternoon';
     else if (request.includes('mattina') || request.includes('mattino')) period = 'morning';
+    
+    // ← NUOVO: Controlla se la data richiesta cade nel weekend
+    if (specificDate && isWeekend(specificDate)) {
+        const dayName = request.includes('oggi') ? 'oggi' : 'domani';
+        return {
+            type: 'weekend',
+            message: `Mi dispiace, ma ${dayName} cade nel weekend e i nostri tecnici non lavorano. Possiamo fissare un appuntamento per lunedì?`,
+        };
+    }
     
     // Se è una data specifica (oggi/domani), cerca solo in quel giorno
     if (specificDate) {
