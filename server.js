@@ -132,6 +132,7 @@ Tu: [usa create_appointment]
 Tu: "Perfetto! Ho prenotato il suo appuntamento per oggi alle 15:00. A presto!"
 `;
 
+
 fastify.get('/', async (req, reply) => {
     const isAuth = await googleClient.isAuthenticated();
     const isProduction = process.env.NODE_ENV === 'production';
@@ -321,22 +322,26 @@ fastify.register(async (fastify) => {
           const result = await calendar.parseSchedulingRequest(args.request);
           return JSON.stringify(result);
         }
-
-        if (functionName === "create_appointment") {
-          const [day, month, year] = args.date.split("/");
-          const [hour, minute] = args.time.split(":");
-          const appointmentDate = new Date(year, month - 1, day, hour, minute);
-
-          const result = await calendar.createAppointment(
-            appointmentDate,
-            args.customer_name,
-            args.customer_phone,
-            args.address
-          );
-
-          return JSON.stringify(result);
-        }
-
+			
+		if (functionName === "create_appointment") {
+			const [day, month, year] = args.date.split("/");
+			const [hour, minute] = args.time.split(":");
+  
+			// Crea una data esplicita in timezone Europe/Rome
+			// Formato ISO con timezone: YYYY-MM-DDTHH:MM:SS+01:00
+			const isoDateStr = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}T${hour.padStart(2, '0')}:${minute.padStart(2, '0')}:00+01:00`;
+			const appointmentDate = new Date(isoDateStr);
+  
+			const result = await calendar.createAppointment(
+				appointmentDate,
+				args.customer_name,
+				args.customer_phone,
+				args.address
+			);
+			
+			return JSON.stringify(result);
+		}
+        
         return JSON.stringify({ error: "Unknown function" });
       } catch (error) {
         console.error("? [FUNCTION ERROR]:", error);
