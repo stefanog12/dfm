@@ -176,15 +176,27 @@ export async function createAppointment(startDateTime, customerName, customerPho
         
         const endDateTime = new Date(startDateTime.getTime() + SLOT_DURATION_MINUTES * 60000);
         
+        // Formatta date in formato ISO senza conversione UTC
+        // Google Calendar interpreterà l'orario secondo il timeZone specificato
+        const formatDateTimeForCalendar = (date) => {
+            const year = date.getFullYear();
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const day = String(date.getDate()).padStart(2, '0');
+            const hours = String(date.getHours()).padStart(2, '0');
+            const minutes = String(date.getMinutes()).padStart(2, '0');
+            const seconds = String(date.getSeconds()).padStart(2, '0');
+            return `${year}-${month}-${day}T${hours}:${minutes}:${seconds}`;
+        };
+        
         const event = {
             summary: `Intervento - ${customerName}`,
             description: `Cliente: ${customerName}\nTelefono: ${customerPhone}\nIndirizzo: ${address}`,
             start: {
-                dateTime: startDateTime.toISOString(),
+                dateTime: formatDateTimeForCalendar(startDateTime),
                 timeZone: 'Europe/Rome',
             },
             end: {
-                dateTime: endDateTime.toISOString(),
+                dateTime: formatDateTimeForCalendar(endDateTime),
                 timeZone: 'Europe/Rome',
             },
             reminders: {
