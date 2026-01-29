@@ -63,27 +63,32 @@ export async function getAvailableSlots(startDate, endDate) {
         
         const availableSlots = [];
         
-        let currentDate = new Date(startDate);
-        console.log('📅 DEBUG - Inizio iterazione da:', currentDate.toLocaleString('it-IT'));
+        // Normalizza le date per il confronto (solo data, senza ore)
+        const startDay = new Date(startDate);
+        startDay.setHours(0, 0, 0, 0);
+        const endDay = new Date(endDate);
+        endDay.setHours(23, 59, 59, 999);
+        
+        console.log('📅 DEBUG - Range normalizzato:', startDay.toLocaleDateString('it-IT'), '-', endDay.toLocaleDateString('it-IT'));
         
         // Itera giorno per giorno
-        while (currentDate < endDate) {
-            const day = new Date(currentDate);
-            day.setHours(0, 0, 0, 0);
+        let currentDay = new Date(startDay);
+        
+        while (currentDay <= endDay) {
+            console.log('📅 DEBUG - Controllando giorno:', currentDay.toLocaleDateString('it-IT'), 'day:', currentDay.getDay());
             
             // Per ogni giorno, controlla gli slot fissi
             for (const hour of FIXED_SLOT_HOURS) {
-                const slotStart = new Date(day);
+                const slotStart = new Date(currentDay);
                 slotStart.setHours(hour, 0, 0, 0);
                 
-                // Salta slot nel passato
-                // if (slotStart < startDate) continue;
-                if (slotStart < startDate && slotStart.toDateString() === startDate.toDateString()) continue;
-
-                if (slotStart >= endDate) break;
+                console.log('  🕐 DEBUG - Testando slot:', slotStart.toLocaleString('it-IT'), '(ora:', hour, ')');
                 
                 // Verifica se è orario lavorativo
-                if (!isWorkingHours(slotStart)) continue;
+                if (!isWorkingHours(slotStart)) {
+                    console.log('    ⏭️ Skip: fuori orario lavorativo (day:', slotStart.getDay(), 'hour:', hour, ')');
+                    continue;
+                }
                 
                 const slotEnd = new Date(slotStart.getTime() + SLOT_DURATION_MINUTES * 60000);
                 
@@ -91,21 +96,29 @@ export async function getAvailableSlots(startDate, endDate) {
                 const isSlotFree = !events.some(event => {
                     const eventStart = new Date(event.start.dateTime || event.start.date);
                     const eventEnd = new Date(event.end.dateTime || event.end.date);
-                    return (slotStart < eventEnd && slotEnd > eventStart);
+                    const overlaps = (slotStart < eventEnd && slotEnd > eventStart);
+                    if (overlaps) {
+                        console.log('    ⚠️ Overlap con:', event.summary);
+                    }
+                    return overlaps;
                 });
                 
                 if (isSlotFree) {
+                    console.log('    ✅ SLOT LIBERO TROVATO');
                     availableSlots.push({
                         start: new Date(slotStart),
                         end: new Date(slotEnd),
                         date: slotStart.toLocaleDateString('it-IT'),
                         time: slotStart.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' }),
                     });
+                } else {
+                    console.log('    ❌ SLOT OCCUPATO');
                 }
             }
             
             // Passa al giorno successivo
-            currentDate.setDate(currentDate.getDate() + 1);
+            currentDay.setDate(currentDay.getDate() + 1);
+            console.log('📅 DEBUG - Passaggio a giorno successivo:', currentDay.toLocaleDateString('it-IT'));
         }
         
         console.log('📅 DEBUG - Slot disponibili totali trovati:', availableSlots.length);
@@ -281,7 +294,7 @@ export async function parseSchedulingRequest(userRequest) {
     if (request.includes('pomeriggio')) period = 'afternoon';
     else if (request.includes('mattina') || request.includes('mattino')) period = 'morning';
     
-    // ← NUOVO: Controlla se la data richiesta cade nel weekend
+    // Controlla se la data richiesta cade nel weekend
     if (specificDate && isWeekend(specificDate)) {
         const dayName = request.includes('oggi') ? 'oggi' : 'domani';
         return {
