@@ -77,7 +77,9 @@ export async function getAvailableSlots(startDate, endDate) {
                 slotStart.setHours(hour, 0, 0, 0);
                 
                 // Salta slot nel passato
-                if (slotStart < startDate) continue;
+                // if (slotStart < startDate) continue;
+                if (slotStart < startDate && slotStart.toDateString() === startDate.toDateString()) continue;
+
                 if (slotStart >= endDate) break;
                 
                 // Verifica se è orario lavorativo
