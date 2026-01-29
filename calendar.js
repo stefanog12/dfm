@@ -100,6 +100,9 @@ export async function getAvailableSlots(startDate, endDate) {
                 if (!isWorkingHours(slotStart)) {
                     console.log('    ⏭️ Skip: fuori orario lavorativo (day:', slotStart.getDay(), 'hour:', hour, ')');
                     continue;
+                } else {
+                    console.log('    â­ï¸ VA BENE!! (day:', slotStart.getDay(), 'hour:', hour, ')');
+                    
                 }
                 
                 const slotEnd = new Date(slotStart.getTime() + SLOT_DURATION_MINUTES * 60000);
