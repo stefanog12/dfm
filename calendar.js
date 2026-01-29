@@ -8,7 +8,7 @@ const WORKING_HOURS = {
     start: 8,
     end: 17,
     lunchStart: 12,
-    lunchEnd: 13,
+    lunchEnd: 14,  // Pausa pranzo 12:00-14:00 (slot delle 13:00 incluso nella pausa)
 };
 
 const SLOT_DURATION_MINUTES = 120; // 2 ore
@@ -23,10 +23,22 @@ function isWorkingHours(date) {
     const hour = date.getHours();
     const day = date.getDay();
     
-    if (day === 0 || day === 6) return false;
-    if (hour < WORKING_HOURS.start || hour >= WORKING_HOURS.end) return false;
-    if (hour >= WORKING_HOURS.lunchStart && hour < WORKING_HOURS.lunchEnd) return false;
+    console.log(`    🔍 isWorkingHours check: day=${day}, hour=${hour}`);
     
+    if (day === 0 || day === 6) {
+        console.log(`    ❌ Weekend: day=${day}`);
+        return false;
+    }
+    if (hour < WORKING_HOURS.start || hour >= WORKING_HOURS.end) {
+        console.log(`    ❌ Fuori orario: ${hour} < ${WORKING_HOURS.start} || ${hour} >= ${WORKING_HOURS.end}`);
+        return false;
+    }
+    if (hour >= WORKING_HOURS.lunchStart && hour < WORKING_HOURS.lunchEnd) {
+        console.log(`    ❌ Pausa pranzo: ${hour} >= ${WORKING_HOURS.lunchStart} && ${hour} < ${WORKING_HOURS.lunchEnd}`);
+        return false;
+    }
+    
+    console.log(`    ✅ Orario lavorativo OK`);
     return true;
 }
 
@@ -99,6 +111,9 @@ export async function getAvailableSlots(startDate, endDate) {
                     const overlaps = (slotStart < eventEnd && slotEnd > eventStart);
                     if (overlaps) {
                         console.log('    ⚠️ Overlap con:', event.summary);
+                        console.log('      Slot:', slotStart.toISOString(), '-', slotEnd.toISOString());
+                        console.log('      Event:', eventStart.toISOString(), '-', eventEnd.toISOString());
+                        console.log('      Check:', slotStart < eventEnd, '&&', slotEnd > eventStart, '=', overlaps);
                     }
                     return overlaps;
                 });
