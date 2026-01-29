@@ -8,7 +8,7 @@ const WORKING_HOURS = {
     start: 8,
     end: 17,
     lunchStart: 12,
-    lunchEnd: 13  // Pausa pranzo 12:00-14:00 (slot delle 13:00 incluso nella pausa)
+    lunchEnd: 13,  // Pausa pranzo 12:00-13:00 (slot delle 13:00 disponibile)
 };
 
 const SLOT_DURATION_MINUTES = 120; // 2 ore
@@ -100,9 +100,6 @@ export async function getAvailableSlots(startDate, endDate) {
                 if (!isWorkingHours(slotStart)) {
                     console.log('    ⏭️ Skip: fuori orario lavorativo (day:', slotStart.getDay(), 'hour:', hour, ')');
                     continue;
-                } else {
-                    console.log('    â­ï¸ VA BENE!! (day:', slotStart.getDay(), 'hour:', hour, ')');
-                    
                 }
                 
                 const slotEnd = new Date(slotStart.getTime() + SLOT_DURATION_MINUTES * 60000);
