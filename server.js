@@ -459,7 +459,7 @@ fastify.register(async (fastify) => {
             initializeSession();
         });
 
-        openAiWs.on('message', (data) => {
+        openAiWs.on("message", async (data) => {
             
             try {
                 const msg = JSON.parse(data);
