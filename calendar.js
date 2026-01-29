@@ -91,35 +91,53 @@ export async function getAvailableSlots(startDate, endDate) {
             
             // Per ogni giorno, controlla gli slot fissi
             for (const hour of FIXED_SLOT_HOURS) {
+                // Crea lo slot in ora locale italiana
                 const slotStart = new Date(currentDay);
                 slotStart.setHours(hour, 0, 0, 0);
+                const slotEnd = new Date(slotStart.getTime() + SLOT_DURATION_MINUTES * 60000);
                 
                 console.log('  🕐 DEBUG - Testando slot:', slotStart.toLocaleString('it-IT'), '(ora:', hour, ')');
+                console.log('    📍 Slot locale:', slotStart.toISOString(), '-', slotEnd.toISOString());
                 
                 // Verifica se è orario lavorativo
                 if (!isWorkingHours(slotStart)) {
-                    console.log('    ⏭️ Skip: fuori orario lavorativo (day:', slotStart.getDay(), 'hour:', hour, ')');
                     continue;
                 }
                 
-                const slotEnd = new Date(slotStart.getTime() + SLOT_DURATION_MINUTES * 60000);
-                
                 // Verifica se lo slot è libero
                 const isSlotFree = !events.some(event => {
-                    const eventStart = new Date(event.start.dateTime || event.start.date);
-                    const eventEnd = new Date(event.end.dateTime || event.end.date);
+                    // Converti gli eventi da UTC a ora locale italiana (+1 ora in inverno, +2 in estate)
+                    const eventStartUTC = new Date(event.start.dateTime || event.start.date);
+                    const eventEndUTC = new Date(event.end.dateTime || event.end.date);
+                    
+                    // Calcola offset timezone automatico
+                    const testDate = new Date(eventStartUTC);
+                    const offset = -testDate.getTimezoneOffset() / 60; // Ore di differenza da UTC
+                    
+                    // Aggiungi offset per convertire a ora locale
+                    const eventStart = new Date(eventStartUTC.getTime() + (offset * 60 * 60 * 1000));
+                    const eventEnd = new Date(eventEndUTC.getTime() + (offset * 60 * 60 * 1000));
+                    
                     const overlaps = (slotStart < eventEnd && slotEnd > eventStart);
+                    
+                    console.log('    🔎 Controllo evento:', event.summary);
+                    console.log('      Event UTC:', eventStartUTC.toISOString(), '-', eventEndUTC.toISOString());
+                    console.log('      Offset calcolato:', offset, 'ore');
+                    console.log('      Event locale:', eventStart.toISOString(), '-', eventEnd.toISOString());
+                    console.log('      Slot locale:', slotStart.toISOString(), '-', slotEnd.toISOString());
+                    console.log('      Overlap?', slotStart, '<', eventEnd, '&&', slotEnd, '>', eventStart, '=', overlaps);
+                    
                     if (overlaps) {
-                        console.log('    ⚠️ Overlap con:', event.summary);
-                        console.log('      Slot:', slotStart.toISOString(), '-', slotEnd.toISOString());
-                        console.log('      Event:', eventStart.toISOString(), '-', eventEnd.toISOString());
-                        console.log('      Check:', slotStart < eventEnd, '&&', slotEnd > eventStart, '=', overlaps);
+                        console.log('    ⚠️ OVERLAP TROVATO con:', event.summary);
+                    } else {
+                        console.log('    ✅ NO overlap con:', event.summary);
                     }
+                    
                     return overlaps;
                 });
                 
                 if (isSlotFree) {
-                    console.log('    ✅ SLOT LIBERO TROVATO');
+                    console.log('    ✅✅✅ SLOT LIBERO CONFERMATO ✅✅✅');
                     availableSlots.push({
                         start: new Date(slotStart),
                         end: new Date(slotEnd),
