@@ -285,9 +285,17 @@ export async function parseSchedulingRequest(userRequest) {
         
         const slots = await getAvailableSlots(specificDate, endOfDay);
         
+        // DEBUG: Log per capire cosa sta succedendo
+        console.log('🔍 DEBUG - Data richiesta:', specificDate.toLocaleDateString('it-IT'));
+        console.log('🔍 DEBUG - Tutti gli slot trovati:', slots.map(s => `${s.time} (ora: ${s.start.getHours()})`));
+        console.log('🔍 DEBUG - Period richiesto:', period);
+        console.log('🔍 DEBUG - WORKING_HOURS.lunchEnd:', WORKING_HOURS.lunchEnd);
+        
         let filteredSlots = slots;
         if (period === 'morning') filteredSlots = slots.filter(s => s.start.getHours() < WORKING_HOURS.lunchStart);
         else if (period === 'afternoon') filteredSlots = slots.filter(s => s.start.getHours() >= WORKING_HOURS.lunchEnd);
+        
+        console.log('🔍 DEBUG - Slot dopo filtro:', filteredSlots.map(s => s.time));
         
         if (filteredSlots.length === 0) {
             const dayName = request.includes('oggi') ? 'oggi' : 'domani';
