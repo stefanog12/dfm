@@ -8,7 +8,7 @@ const WORKING_HOURS = {
     start: 8,
     end: 17,
     lunchStart: 12,
-    lunchEnd: 14,  // Pausa pranzo 12:00-14:00 (slot delle 13:00 incluso nella pausa)
+    lunchEnd: 13  // Pausa pranzo 12:00-14:00 (slot delle 13:00 incluso nella pausa)
 };
 
 const SLOT_DURATION_MINUTES = 120; // 2 ore
