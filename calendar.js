@@ -106,15 +106,17 @@ export async function getAvailableSlots(startDate, endDate) {
                 
                 // Verifica se lo slot è libero
                 const isSlotFree = !events.some(event => {
-                    // Converti gli eventi da UTC a ora locale italiana (+1 ora in inverno, +2 in estate)
+                    // Gli eventi arrivano da Google Calendar in UTC
                     const eventStartUTC = new Date(event.start.dateTime || event.start.date);
                     const eventEndUTC = new Date(event.end.dateTime || event.end.date);
                     
-                    // Calcola offset timezone automatico
-                    const testDate = new Date(eventStartUTC);
-                    const offset = -testDate.getTimezoneOffset() / 60; // Ore di differenza da UTC
+                    // FORZA conversione a Europe/Rome aggiungendo 1 ora (inverno) o 2 ore (estate)
+                    // Determina se siamo in ora legale
+                    const month = eventStartUTC.getMonth() + 1; // 1-12
+                    const isDST = month >= 3 && month <= 10; // Marzo-Ottobre (approssimazione)
+                    const offset = isDST ? 2 : 1; // +2 in estate, +1 in inverno
                     
-                    // Aggiungi offset per convertire a ora locale
+                    // Converti eventi da UTC a ora italiana
                     const eventStart = new Date(eventStartUTC.getTime() + (offset * 60 * 60 * 1000));
                     const eventEnd = new Date(eventEndUTC.getTime() + (offset * 60 * 60 * 1000));
                     
@@ -122,7 +124,7 @@ export async function getAvailableSlots(startDate, endDate) {
                     
                     console.log('    🔎 Controllo evento:', event.summary);
                     console.log('      Event UTC:', eventStartUTC.toISOString(), '-', eventEndUTC.toISOString());
-                    console.log('      Offset calcolato:', offset, 'ore');
+                    console.log('      Offset applicato:', offset, 'ore (DST:', isDST, ')');
                     console.log('      Event locale:', eventStart.toISOString(), '-', eventEnd.toISOString());
                     console.log('      Slot locale:', slotStart.toISOString(), '-', slotEnd.toISOString());
                     console.log('      Overlap?', slotStart, '<', eventEnd, '&&', slotEnd, '>', eventStart, '=', overlaps);
