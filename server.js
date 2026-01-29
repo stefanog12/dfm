@@ -327,9 +327,15 @@ fastify.register(async (fastify) => {
 			const [day, month, year] = args.date.split("/");
 			const [hour, minute] = args.time.split(":");
   
+			// Determina offset timezone (ora legale vs solare)
+			const testDate = new Date(year, month - 1, day);
+			const offset = -testDate.getTimezoneOffset() / 60;
+			const offsetStr = offset >= 0 ? `+${String(offset).padStart(2, '0')}:00` : `-${String(Math.abs(offset)).padStart(2, '0')}:00`;
+  
 			// Crea una data esplicita in timezone Europe/Rome
 			// Formato ISO con timezone: YYYY-MM-DDTHH:MM:SS+01:00
-			const isoDateStr = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}T${hour.padStart(2, '0')}:${minute.padStart(2, '0')}:00+01:00`;
+			const isoDateStr = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}T${hour.padStart(2, '0')}:${minute.padStart(2, '0')}:00${offsetStr}`;
+			// const isoDateStr = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}T${hour.padStart(2, '0')}:${minute.padStart(2, '0')}:00+01:00`;
 			const appointmentDate = new Date(isoDateStr);
   
 			const result = await calendar.createAppointment(
