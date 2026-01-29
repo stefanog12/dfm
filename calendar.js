@@ -43,6 +43,9 @@ function isWeekend(date) {
  */
 export async function getAvailableSlots(startDate, endDate) {
     try {
+        console.log('📅 DEBUG getAvailableSlots - startDate:', startDate.toISOString(), '(locale:', startDate.toLocaleString('it-IT'), ')');
+        console.log('📅 DEBUG getAvailableSlots - endDate:', endDate.toISOString(), '(locale:', endDate.toLocaleString('it-IT'), ')');
+        
         const auth = await getAuthenticatedClient();
         const calendar = google.calendar({ version: 'v3', auth });
         
@@ -55,9 +58,13 @@ export async function getAvailableSlots(startDate, endDate) {
         });
         
         const events = response.data.items || [];
+        console.log('📅 DEBUG - Eventi trovati nel calendario:', events.length);
+        events.forEach(e => console.log('  -', e.summary, ':', e.start.dateTime || e.start.date));
+        
         const availableSlots = [];
         
         let currentDate = new Date(startDate);
+        console.log('📅 DEBUG - Inizio iterazione da:', currentDate.toLocaleString('it-IT'));
         
         // Itera giorno per giorno
         while (currentDate < endDate) {
@@ -98,6 +105,9 @@ export async function getAvailableSlots(startDate, endDate) {
             // Passa al giorno successivo
             currentDate.setDate(currentDate.getDate() + 1);
         }
+        
+        console.log('📅 DEBUG - Slot disponibili totali trovati:', availableSlots.length);
+        availableSlots.forEach(s => console.log('  ✅', s.date, s.time));
         
         return availableSlots;
     } catch (error) {
