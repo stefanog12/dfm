@@ -19,6 +19,14 @@ if (!OPENAI_API_KEY) {
 
 const openaiClient = new OpenAI({ apiKey: OPENAI_API_KEY });
 
+// ðŸŽ™ï¸ Load prerecorded welcome message
+let WELCOME_AUDIO = null;
+try {
+    WELCOME_AUDIO = fs.readFileSync("welcome_message.ulaw");
+    console.log("âœ… Welcome message loaded");
+} catch (err) {
+    console.warn("âš ï¸ Welcome message not found. Generate it with: node generate_welcome.js");
+}
 
 // Inizializza Google Client
 await googleClient.initialize();
@@ -80,7 +88,7 @@ La tua voce e personalità devono essere calde e coinvolgenti, con un tono vivac
 Preferisci frasi sotto i 10 secondi. Mantieni le risposte BREVI (2-3 frasi max).
 Obbiettivo è gestire la telefonata come dagli esempi che arrivano dal RAG. 
 Se il cliente chiede di prendere un appuntamento gestiscilo con il flusso prenotazione.
-Se il cliente fa altre domande gestiscile come sai ma durante la seconda risposta proponi un intervente del tecnico.
+Se il cliente fa altre domande gestiscile come sai ma durante la seconda risposta proponi un intervente del tecnico
 
 ORARI DI LAVORO:
 - Lunedì-Venerdì: 8:00-17:00 (pausa pranzo 12:00-13:00)
@@ -274,9 +282,6 @@ fastify.get('/oauth/status', async (req, reply) => {
 fastify.all('/incoming-call', async (req, reply) => {
     const twimlResponse = `<?xml version="1.0" encoding="UTF-8"?>
         <Response>
-            <Say>Connettendo con l'assistente A.I.</Say>
-            <Pause length="1"/>
-            <Say>Puoi iniziare a parlare!</Say>
             <Connect>
                 <Stream url="wss://${req.headers.host}/media-stream" />
             </Connect>
@@ -465,6 +470,22 @@ fastify.register(async (fastify) => {
 			console.log('ðŸ§  Connessione OpenAI attiva');
             // console.log('ðŸ§  OpenAI WebSocket connection opened (readyState:', openAiWs.readyState, ')');
             initializeSession();
+			
+			// ðŸŽ¤ Send welcome message via OpenAI
+            setTimeout(() => {
+				GoAppend = false;
+                if (openAiWs.readyState === WebSocket.OPEN) {
+                    console.log('ðŸ“¢ Sending welcome message via OpenAI');
+                    openAiWs.send(JSON.stringify({
+                        type: 'response.create',
+                        response: {
+                            modalities: ['text', 'audio'],
+                            instructions: 'Say: "DFM clima, buongiorno. Sono l\'assistente virtuale. Come posso aiutarla?"'
+                        }
+                    }));
+                }
+            }, 200);
+			GoAppend = true;
         });
 
         openAiWs.on("message", async (data) => {
