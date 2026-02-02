@@ -82,7 +82,7 @@ const CALENDAR_TOOLS = [
 ];
 
 const BASE_SYSTEM_MESSAGE = `
-Sei un assistente vocale AI amichevole e conciso per un'azienda che offre servizi di manutenzione e riparazione.
+Sei un assistente vocale AI amichevole e conciso per un'azienda che offre servizi di manutenzione e riparazione per condizionatori e pompe di calore.
 Mantieni le risposte brevi e conversazionali, come una vera telefonata.
 La tua voce e personalità devono essere calde e coinvolgenti, con un tono vivace e giocoso.
 Preferisci frasi sotto i 10 secondi. Mantieni le risposte BREVI (2-3 frasi max).
@@ -315,7 +315,7 @@ fastify.register(async (fastify) => {
         let pendingRagUpdate = false;
                 	
 		let speechTimeout = null;
-        const MAX_SPEECH_DURATION = 6000; // 8 secondi
+        let MAX_SPEECH_DURATION = 6000; // 6 secondi per risposte generiche, 3000 durante raccolta dati
 		
 
         const openAiWs = new WebSocket('wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview', {
@@ -371,7 +371,9 @@ fastify.register(async (fastify) => {
       console.log("?? [FUNCTION CALL]", functionName, args);
       try {
         if (functionName === "find_available_slots") {
+		  MAX_SPEECH_DURATION = 3000;
           const result = await calendar.parseSchedulingRequest(args.request);
+		  MAX_SPEECH_DURATION = 6000;
           return JSON.stringify(result);
         }
 			
@@ -382,6 +384,8 @@ fastify.register(async (fastify) => {
 			 // Crea Date locale (verrà interpretata correttamente da calendar.js)
 			const appointmentDate = new Date(year, month - 1, day, hour, minute, 0);
   
+			MAX_SPEECH_DURATION = 3000;
+			
 			const result = await calendar.createAppointment(
 				appointmentDate,
 				args.customer_name,
@@ -389,6 +393,7 @@ fastify.register(async (fastify) => {
 				args.address
 			);
 			
+			MAX_SPEECH_DURATION = 6000;
 			return JSON.stringify(result);
 		}
         
@@ -579,7 +584,7 @@ fastify.register(async (fastify) => {
 					
 					if (speechTimeout) clearTimeout(speechTimeout);
 						speechTimeout = setTimeout(() => {
-							console.warn('? [TIMEOUT] Forcing speech_stopped after 8s');
+							console.warn('? [TIMEOUT] Forcing speech_stopped after 6s');
 							NotYetCommitted = false;
 							
 							if (openAiWs.readyState === WebSocket.OPEN) {
