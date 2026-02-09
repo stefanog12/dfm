@@ -7,34 +7,39 @@ const CALENDAR_ID = process.env.GOOGLE_CALENDAR_ID || 'primary';
 const WORKING_HOURS = {
     start: 8,
     end: 17,
-    lunchStart: 12,
-    lunchEnd: 13,  // Pausa pranzo 12:00-13:00 (slot delle 13:00 disponibile)
+    lunchStart: 12.5,  // 12:30 (12 + 30/60 = 12.5)
+    lunchEnd: 13.5,    // 13:30 (13 + 30/60 = 13.5)
 };
 
 const SLOT_DURATION_MINUTES = 120; // 2 ore
 
-// Slot fissi: 8:00, 10:00, 13:00, 15:00
-const FIXED_SLOT_HOURS = [8, 10, 13, 15];
+// Slot fissi: 8:30, 10:30, 13:30, 15:30
+const FIXED_SLOT_HOURS = [
+    { hour: 8, minute: 30 },
+    { hour: 10, minute: 30 },
+    { hour: 13, minute: 30 },
+    { hour: 15, minute: 30 }
+];
 
 /**
  * Verifica se un orario è lavorativo
  */
 function isWorkingHours(date) {
-    const hour = date.getHours();
+    const hour = date.getHours() + date.getMinutes() / 60; // Converti a decimale (es. 12:30 = 12.5)
     const day = date.getDay();
     
-    console.log(`    🔍 isWorkingHours check: day=${day}, hour=${hour}`);
+    console.log(`    🔍 isWorkingHours check: day=${day}, hour=${hour.toFixed(2)}`);
     
     if (day === 0 || day === 6) {
         console.log(`    ❌ Weekend: day=${day}`);
         return false;
     }
     if (hour < WORKING_HOURS.start || hour >= WORKING_HOURS.end) {
-        console.log(`    ❌ Fuori orario: ${hour} < ${WORKING_HOURS.start} || ${hour} >= ${WORKING_HOURS.end}`);
+        console.log(`    ❌ Fuori orario: ${hour.toFixed(2)} < ${WORKING_HOURS.start} || ${hour.toFixed(2)} >= ${WORKING_HOURS.end}`);
         return false;
     }
     if (hour >= WORKING_HOURS.lunchStart && hour < WORKING_HOURS.lunchEnd) {
-        console.log(`    ❌ Pausa pranzo: ${hour} >= ${WORKING_HOURS.lunchStart} && ${hour} < ${WORKING_HOURS.lunchEnd}`);
+        console.log(`    ❌ Pausa pranzo: ${hour.toFixed(2)} >= ${WORKING_HOURS.lunchStart} && ${hour.toFixed(2)} < ${WORKING_HOURS.lunchEnd}`);
         return false;
     }
     
@@ -90,13 +95,13 @@ export async function getAvailableSlots(startDate, endDate) {
             console.log('📅 DEBUG - Controllando giorno:', currentDay.toLocaleDateString('it-IT'), 'day:', currentDay.getDay());
             
             // Per ogni giorno, controlla gli slot fissi
-            for (const hour of FIXED_SLOT_HOURS) {
+            for (const slot of FIXED_SLOT_HOURS) {
                 // Crea lo slot in ora locale italiana
                 const slotStart = new Date(currentDay);
-                slotStart.setHours(hour, 0, 0, 0);
+                slotStart.setHours(slot.hour, slot.minute, 0, 0);
                 const slotEnd = new Date(slotStart.getTime() + SLOT_DURATION_MINUTES * 60000);
                 
-                console.log('  🕐 DEBUG - Testando slot:', slotStart.toLocaleString('it-IT'), '(ora:', hour, ')');
+                console.log('  🕐 DEBUG - Testando slot:', slotStart.toLocaleString('it-IT'), '(ora:', slot.hour + ':' + slot.minute, ')');
                 console.log('    📍 Slot locale:', slotStart.toISOString(), '-', slotEnd.toISOString());
                 
                 // Verifica se è orario lavorativo
@@ -183,18 +188,29 @@ export async function findFirstAvailableSlot() {
 export async function findSlotsInWeek(weekOffset = 0) {
     const now = new Date();
     
-    const startOfWeek = new Date(now);
-    startOfWeek.setDate(now.getDate() + (weekOffset * 7));
-    startOfWeek.setHours(0, 0, 0, 0);
+    // Calcola il lunedì della settimana corrente o futura
+    const currentDay = now.getDay(); // 0 = domenica, 1 = lunedì, ..., 6 = sabato
+    const daysToMonday = currentDay === 0 ? -6 : 1 - currentDay; // Se domenica → -6, altrimenti → giorni al lunedì
     
-    const endOfWeek = new Date(startOfWeek);
-    endOfWeek.setDate(startOfWeek.getDate() + 6);
-    endOfWeek.setHours(23, 59, 59, 999);
+    // Lunedì della settimana corrente (o futura se weekOffset > 0)
+    const monday = new Date(now);
+    monday.setDate(now.getDate() + daysToMonday + (weekOffset * 7));
+    monday.setHours(0, 0, 0, 0);
     
-    const slots = await getAvailableSlots(startOfWeek, endOfWeek);
+    // Venerdì della stessa settimana
+    const friday = new Date(monday);
+    friday.setDate(monday.getDate() + 4); // Lunedì + 4 giorni = Venerdì
+    friday.setHours(23, 59, 59, 999);
+    
+    console.log('📅 DEBUG findSlotsInWeek - weekOffset:', weekOffset);
+    console.log('📅 DEBUG - Oggi:', now.toLocaleDateString('it-IT'), 'day:', currentDay);
+    console.log('📅 DEBUG - Lunedì:', monday.toLocaleDateString('it-IT'));
+    console.log('📅 DEBUG - Venerdì:', friday.toLocaleDateString('it-IT'));
+    
+    const slots = await getAvailableSlots(monday, friday);
     
     return {
-        week: `${startOfWeek.toLocaleDateString('it-IT')} - ${endOfWeek.toLocaleDateString('it-IT')}`,
+        week: `${monday.toLocaleDateString('it-IT')} - ${friday.toLocaleDateString('it-IT')}`,
         slots: slots,
         morning: slots.filter(s => s.start.getHours() < WORKING_HOURS.lunchStart),
         afternoon: slots.filter(s => s.start.getHours() >= WORKING_HOURS.lunchEnd),
