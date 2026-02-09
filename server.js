@@ -99,9 +99,9 @@ QUANDO NON PROPORRE APPUNTAMENTO:
 - Se il cliente ha già rifiutato l'offerta di un appuntamento
 
 ORARI DI LAVORO:
-- Lunedì-Venerdì: 8:00-17:00 (pausa pranzo 12:00-13:00)
+- Lunedì-Venerdì: 8:30-17:30 (pausa pranzo 12:30-13:30)
 - Weekend: CHIUSO - i tecnici non lavorano sabato e domenica
-- Slot disponibili: 8:00, 10:00, 13:00, 15:00 (durata 2 ore)
+- Slot disponibili: 8:30, 10:30, 13:30, 15:30 (durata 2 ore)
 
 FLUSSO PRENOTAZIONE - SEGUI RIGOROSAMENTE QUESTI STEP:
 
