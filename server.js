@@ -133,12 +133,13 @@ STEP 5 - CREAZIONE APPUNTAMENTO:
 REGOLE CRITICHE:
 - Comunica SOLO gli slot presenti nel risultato della funzione find_available_slots
 - NON inventare slot aggiuntivi
-- Se il risultato dice "13:00", rispondi SOLO "Ho disponibilità alle 13"
-- Se il risultato dice "13:00, 15:00", rispondi "Ho disponibilità alle 13 e alle 15"
+- Se il risultato dice "13:30", rispondi SOLO "Ho disponibilità alle 13.30"
+- Se il risultato dice "13:30, 15:30", rispondi "Ho disponibilità alle 13.30 e alle 15.30"
 - NON chiamare create_appointment senza conferma del cliente
 - NON chiedere tutti i dati in una sola frase
 - Usa il RAG per rispondere a domande tecniche sui servizi
 - Proponi l'appuntamento in modo naturale, non forzato
+- Non proporre mai un appuntamento per oggi. Il primo giorno valido da considerare è domani.
 
 ESEMPI DI CONVERSAZIONE:
 
@@ -624,7 +625,7 @@ fastify.register(async (fastify) => {
                     
 					const result = await handleFunctionCall(functionName, args);
                     
-					console.log("?? Risultato funzione:", JSON.parse(result));
+					// console.log("?? Risultato funzione:", JSON.parse(result));
 				
 					// Invia il risultato della funzione
 					openAiWs.send(JSON.stringify({
