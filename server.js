@@ -309,6 +309,7 @@ fastify.register(async (fastify) => {
 		let NotYetCommitted = false;  // True se è già stato committato 
 		let GoAppend = true;  // False se è in corso la risposta  
 		let SilenceToApply = true;
+		let firstUserQuestion = null; //per memorizzare nel calendar
 				
 		// ðŸ†• RAG state
         let ragContext = "";
@@ -391,9 +392,11 @@ fastify.register(async (fastify) => {
 				appointmentDate,
 				args.customer_name,
 				args.customer_phone,
-				args.address
+				args.address,
+				firstUserQuestion
 			);
 			
+			firstUserQuestion = null;
 			MAX_SPEECH_DURATION = 6000;
 			return JSON.stringify(result);
 		}
@@ -433,6 +436,11 @@ fastify.register(async (fastify) => {
                 ).join('\n\n');
 
                 console.log('âœ¨ [RAG] Context updated, triggering session update');
+				
+				if (!firstUserQuestion) {
+								firstUserQuestion = userText;
+								// console.log('?? [FIRST USER MESSAGE]:', userText);
+				}
                 
                 // Update session with new context
                 initializeSession();
