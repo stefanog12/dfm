@@ -77,7 +77,7 @@ const CALENDAR_TOOLS = [
         address: { type: "string", description: "Indirizzo del cliente" },
 		note: { type: "string", description: "Richiesta del cliente" },
       },
-      required: ["date", "time", "customer_name", "customer_phone", "address"],
+      required: ["date", "time", "customer_name", "customer_phone", "address", "note"],
     },
   },
 ];
@@ -394,7 +394,7 @@ fastify.register(async (fastify) => {
 				args.customer_name,
 				args.customer_phone,
 				args.address,
-				firstUserQuestion
+				args.firstUserQuestion
 			);
 			
 			firstUserQuestion = null;
