@@ -75,6 +75,7 @@ const CALENDAR_TOOLS = [
         customer_name: { type: "string", description: "Nome del cliente" },
         customer_phone: { type: "string", description: "Numero di telefono del cliente" },
         address: { type: "string", description: "Indirizzo del cliente" },
+		note: { type: "string", description: "Richiesta del cliente" },
       },
       required: ["date", "time", "customer_name", "customer_phone", "address"],
     },
@@ -153,7 +154,7 @@ Tu: "Perfetto! Quando le va meglio? Mattina o pomeriggio?"
 ESEMPIO 2 - Cliente chiede direttamente appuntamento:
 Cliente: "Vorrei un appuntamento domani pomeriggio"
 Tu: [usa find_available_slots con "domani pomeriggio"]
-Tu: "Ho disponibilità alle 13. Va bene?"
+Tu: "Ho disponibilità alle 13.30. Va bene?"
 [segue STEP 3 del FLUSSO]
 
 ESEMPIO 3 - Cliente fa più domande prima:
