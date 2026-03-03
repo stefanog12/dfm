@@ -75,9 +75,8 @@ const CALENDAR_TOOLS = [
         customer_name: { type: "string", description: "Nome del cliente" },
         customer_phone: { type: "string", description: "Numero di telefono del cliente" },
         address: { type: "string", description: "Indirizzo del cliente" },
-		note: { type: "string", description: "Richiesta del cliente" },
       },
-      required: ["date", "time", "customer_name", "customer_phone", "address", "note"],
+      required: ["date", "time", "customer_name", "customer_phone", "address"],
     },
   },
 ];
@@ -134,13 +133,13 @@ STEP 5 - CREAZIONE APPUNTAMENTO:
 REGOLE CRITICHE:
 - Comunica SOLO gli slot presenti nel risultato della funzione find_available_slots
 - NON inventare slot aggiuntivi
+- NON  proporre mai un appuntamento per oggi. Il primo giorno valido da considerare è domani.
 - Se il risultato dice "13:30", rispondi SOLO "Ho disponibilità alle 13.30"
 - Se il risultato dice "13:30, 15:30", rispondi "Ho disponibilità alle 13.30 e alle 15.30"
 - NON chiamare create_appointment senza conferma del cliente
 - NON chiedere tutti i dati in una sola frase
 - Usa il RAG per rispondere a domande tecniche sui servizi
 - Proponi l'appuntamento in modo naturale, non forzato
-- Non proporre mai un appuntamento per oggi. Il primo giorno valido da considerare è domani.
 
 ESEMPI DI CONVERSAZIONE:
 
@@ -320,6 +319,46 @@ fastify.register(async (fastify) => {
 		let speechTimeout = null;
         let MAX_SPEECH_DURATION = 6000; // 6 secondi per risposte generiche, 3000 durante raccolta dati
 		
+		let openAiWs = null;
+        
+        // ========================================
+        // FUNZIONE CLEANUP
+        // ========================================
+        const cleanup = () => {
+            console.log('?? [CLEANUP] Inizio pulizia per streamSid:', streamSid);
+            
+            // Chiudi OpenAI WebSocket
+            if (openAiWs) {
+                if (openAiWs.readyState === WebSocket.OPEN) {
+                    console.log('?? Chiusura OpenAI WebSocket');
+                    openAiWs.close();
+                }
+                openAiWs.removeAllListeners();
+                openAiWs = null;
+            }
+            
+            // Rimuovi listener Twilio
+            conn.removeAllListeners();
+            
+            // Clear timeout se esiste
+            if (speechTimeout) {
+                clearTimeout(speechTimeout);
+                speechTimeout = null;
+            }
+            
+            // Reset variabili
+            streamSid = null;
+            GoAppend = false;
+            markQueue = [];
+            firstUserQuestion = null;
+            hasCalledRag = false;
+            ragContext = "";
+            NotYetCommitted = false;
+            SilenceToApply = true;
+            
+            console.log('? [CLEANUP] Completato');
+        };
+		
 
         const openAiWs = new WebSocket('wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview', {
             headers: {
@@ -394,7 +433,7 @@ fastify.register(async (fastify) => {
 				args.customer_name,
 				args.customer_phone,
 				args.address,
-				args.firstUserQuestion
+				firstUserQuestion
 			);
 			
 			firstUserQuestion = null;
@@ -686,6 +725,15 @@ fastify.register(async (fastify) => {
                     case 'start':
                         streamSid = data.start.streamSid;
                         console.log('ðŸš€ Stream started. SID:', streamSid);
+						GoAppend = true;
+                        markQueue = [];
+                        firstUserQuestion = null;
+                        hasCalledRag = false;
+                        ragContext = "";
+                        break;
+					case 'stop':
+                        console.log('?? [STOP] Twilio stream stopped');
+                        cleanup();
                         break;
                     case 'mark':
                         // console.log('âœ… [MARK] Acknowledged by Twilio');
