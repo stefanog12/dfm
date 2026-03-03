@@ -22,28 +22,28 @@ const FIXED_SLOT_HOURS = [
 ];
 
 /**
- * Verifica se un orario Ã¨ lavorativo
+ * Verifica se un orario è lavorativo
  */
 function isWorkingHours(date) {
     const hour = date.getHours() + date.getMinutes() / 60; // Converti a decimale (es. 12:30 = 12.5)
     const day = date.getDay();
     
-    // console.log(`    ðŸ” isWorkingHours check: day=${day}, hour=${hour.toFixed(2)}`);
+   // console.log(`    🔍 isWorkingHours check: day=${day}, hour=${hour.toFixed(2)}`);
     
     if (day === 0 || day === 6) {
-       // console.log(`    âŒ Weekend: day=${day}`);
+       // console.log(`    ❌ Weekend: day=${day}`);
         return false;
     }
     if (hour < WORKING_HOURS.start || hour >= WORKING_HOURS.end) {
-       // console.log(`    âŒ Fuori orario: ${hour.toFixed(2)} < ${WORKING_HOURS.start} || ${hour.toFixed(2)} >= ${WORKING_HOURS.end}`);
+        // console.log(`    ❌ Fuori orario: ${hour.toFixed(2)} < ${WORKING_HOURS.start} || ${hour.toFixed(2)} >= ${WORKING_HOURS.end}`);
         return false;
     }
     if (hour >= WORKING_HOURS.lunchStart && hour < WORKING_HOURS.lunchEnd) {
-      //  console.log(`    âŒ Pausa pranzo: ${hour.toFixed(2)} >= ${WORKING_HOURS.lunchStart} && ${hour.toFixed(2)} < ${WORKING_HOURS.lunchEnd}`);
+       // console.log(`    ❌ Pausa pranzo: ${hour.toFixed(2)} >= ${WORKING_HOURS.lunchStart} && ${hour.toFixed(2)} < ${WORKING_HOURS.lunchEnd}`);
         return false;
     }
     
-    // console.log(`    âœ… Orario lavorativo OK`);
+   // console.log(`    ✅ Orario lavorativo OK`);
     return true;
 }
 
@@ -60,8 +60,8 @@ function isWeekend(date) {
  */
 export async function getAvailableSlots(startDate, endDate) {
     try {
-       // console.log('ðŸ“… DEBUG getAvailableSlots - startDate:', startDate.toISOString(), '(locale:', startDate.toLocaleString('it-IT'), ')');
-       // console.log('ðŸ“… DEBUG getAvailableSlots - endDate:', endDate.toISOString(), '(locale:', endDate.toLocaleString('it-IT'), ')');
+        // console.log('📅 DEBUG getAvailableSlots - startDate:', startDate.toISOString(), '(locale:', startDate.toLocaleString('it-IT'), ')');
+        // console.log('📅 DEBUG getAvailableSlots - endDate:', endDate.toISOString(), '(locale:', endDate.toLocaleString('it-IT'), ')');
         
         const auth = await getAuthenticatedClient();
         const calendar = google.calendar({ version: 'v3', auth });
@@ -75,7 +75,7 @@ export async function getAvailableSlots(startDate, endDate) {
         });
         
         const events = response.data.items || [];
-       // console.log('ðŸ“… DEBUG - Eventi trovati nel calendario:', events.length);
+       // console.log('📅 DEBUG - Eventi trovati nel calendario:', events.length);
        // events.forEach(e => console.log('  -', e.summary, ':', e.start.dateTime || e.start.date));
         
         const availableSlots = [];
@@ -86,13 +86,13 @@ export async function getAvailableSlots(startDate, endDate) {
         const endDay = new Date(endDate);
         endDay.setHours(23, 59, 59, 999);
         
-       // console.log('ðŸ“… DEBUG - Range normalizzato:', startDay.toLocaleDateString('it-IT'), '-', endDay.toLocaleDateString('it-IT'));
+       // console.log('📅 DEBUG - Range normalizzato:', startDay.toLocaleDateString('it-IT'), '-', endDay.toLocaleDateString('it-IT'));
         
         // Itera giorno per giorno
         let currentDay = new Date(startDay);
         
         while (currentDay <= endDay) {
-           // console.log('ðŸ“… DEBUG - Controllando giorno:', currentDay.toLocaleDateString('it-IT'), 'day:', currentDay.getDay());
+           // console.log('📅 DEBUG - Controllando giorno:', currentDay.toLocaleDateString('it-IT'), 'day:', currentDay.getDay());
             
             // Per ogni giorno, controlla gli slot fissi
             for (const slot of FIXED_SLOT_HOURS) {
@@ -101,15 +101,15 @@ export async function getAvailableSlots(startDate, endDate) {
                 slotStart.setHours(slot.hour, slot.minute, 0, 0);
                 const slotEnd = new Date(slotStart.getTime() + SLOT_DURATION_MINUTES * 60000);
                 
-               // console.log('  ðŸ• DEBUG - Testando slot:', slotStart.toLocaleString('it-IT'), '(ora:', slot.hour + ':' + slot.minute, ')');
-               // console.log('    ðŸ“ Slot locale:', slotStart.toISOString(), '-', slotEnd.toISOString());
+              //  console.log('  🕐 DEBUG - Testando slot:', slotStart.toLocaleString('it-IT'), '(ora:', slot.hour + ':' + slot.minute, ')');
+              //  console.log('    📍 Slot locale:', slotStart.toISOString(), '-', slotEnd.toISOString());
                 
-                // Verifica se Ã¨ orario lavorativo
+                // Verifica se è orario lavorativo
                 if (!isWorkingHours(slotStart)) {
                     continue;
                 }
                 
-                // Verifica se lo slot Ã¨ libero
+                // Verifica se lo slot è libero
                 const isSlotFree = !events.some(event => {
                     // Gli eventi arrivano da Google Calendar in UTC
                     const eventStartUTC = new Date(event.start.dateTime || event.start.date);
@@ -127,7 +127,7 @@ export async function getAvailableSlots(startDate, endDate) {
                     
                     const overlaps = (slotStart < eventEnd && slotEnd > eventStart);
                     
-                  //  console.log('    ðŸ”Ž Controllo evento:', event.summary);
+                  //  console.log('    🔎 Controllo evento:', event.summary);
                   //  console.log('      Event UTC:', eventStartUTC.toISOString(), '-', eventEndUTC.toISOString());
                   //  console.log('      Offset applicato:', offset, 'ore (DST:', isDST, ')');
                   //  console.log('      Event locale:', eventStart.toISOString(), '-', eventEnd.toISOString());
@@ -135,16 +135,16 @@ export async function getAvailableSlots(startDate, endDate) {
                   //  console.log('      Overlap?', slotStart, '<', eventEnd, '&&', slotEnd, '>', eventStart, '=', overlaps);
                     
                     if (overlaps) {
-                       // console.log('    âš ï¸ OVERLAP TROVATO con:', event.summary);
+                       // console.log('    ⚠️ OVERLAP TROVATO con:', event.summary);
                     } else {
-                       // console.log('    âœ… NO overlap con:', event.summary);
+                       // console.log('    ✅ NO overlap con:', event.summary);
                     }
                     
                     return overlaps;
                 });
                 
                 if (isSlotFree) {
-                    console.log('    âœ…âœ…âœ… SLOT LIBERO CONFERMATO âœ…âœ…âœ…');
+                   // console.log('    ✅✅✅ SLOT LIBERO CONFERMATO ✅✅✅');
                     availableSlots.push({
                         start: new Date(slotStart),
                         end: new Date(slotEnd),
@@ -152,33 +152,36 @@ export async function getAvailableSlots(startDate, endDate) {
                         time: slotStart.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' }),
                     });
                 } else {
-                    console.log('    âŒ SLOT OCCUPATO');
+                   // console.log('    ❌ SLOT OCCUPATO');
                 }
             }
             
             // Passa al giorno successivo
             currentDay.setDate(currentDay.getDate() + 1);
-           // console.log('ðŸ“… DEBUG - Passaggio a giorno successivo:', currentDay.toLocaleDateString('it-IT'));
+          //  console.log('📅 DEBUG - Passaggio a giorno successivo:', currentDay.toLocaleDateString('it-IT'));
         }
         
-        // console.log('ðŸ“… DEBUG - Slot disponibili totali trovati:', availableSlots.length);
-        // availableSlots.forEach(s => console.log('  âœ…', s.date, s.time));
+       // console.log('📅 DEBUG - Slot disponibili totali trovati:', availableSlots.length);
+       // availableSlots.forEach(s => console.log('  ✅', s.date, s.time));
         
         return availableSlots;
     } catch (error) {
-        console.error('âŒ Errore Calendar API:', error);
+       // console.error('❌ Errore Calendar API:', error);
         throw error;
     }
 }
 
 /**
- * Trova il primo slot disponibile
+ * Trova il primo slot disponibile (partendo da DOMANI)
  */
 export async function findFirstAvailableSlot() {
-    const now = new Date();
-    const twoWeeksLater = new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000);
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1); // Parte da domani
+    tomorrow.setHours(0, 0, 0, 0);
     
-    const slots = await getAvailableSlots(now, twoWeeksLater);
+    const twoWeeksLater = new Date(tomorrow.getTime() + 14 * 24 * 60 * 60 * 1000);
+    
+    const slots = await getAvailableSlots(tomorrow, twoWeeksLater);
     return slots.length > 0 ? slots[0] : null;
 }
 
@@ -188,24 +191,24 @@ export async function findFirstAvailableSlot() {
 export async function findSlotsInWeek(weekOffset = 0) {
     const now = new Date();
     
-    // Calcola il lunedÃ¬ della settimana corrente o futura
-    const currentDay = now.getDay(); // 0 = domenica, 1 = lunedÃ¬, ..., 6 = sabato
-    const daysToMonday = currentDay === 0 ? -6 : 1 - currentDay; // Se domenica â†’ -6, altrimenti â†’ giorni al lunedÃ¬
+    // Calcola il lunedì della settimana corrente o futura
+    const currentDay = now.getDay(); // 0 = domenica, 1 = lunedì, ..., 6 = sabato
+    const daysToMonday = currentDay === 0 ? -6 : 1 - currentDay; // Se domenica → -6, altrimenti → giorni al lunedì
     
-    // LunedÃ¬ della settimana corrente (o futura se weekOffset > 0)
+    // Lunedì della settimana corrente (o futura se weekOffset > 0)
     const monday = new Date(now);
     monday.setDate(now.getDate() + daysToMonday + (weekOffset * 7));
     monday.setHours(0, 0, 0, 0);
     
-    // VenerdÃ¬ della stessa settimana
+    // Venerdì della stessa settimana
     const friday = new Date(monday);
-    friday.setDate(monday.getDate() + 4); // LunedÃ¬ + 4 giorni = VenerdÃ¬
+    friday.setDate(monday.getDate() + 4); // Lunedì + 4 giorni = Venerdì
     friday.setHours(23, 59, 59, 999);
     
-    // console.log('ðŸ“… DEBUG findSlotsInWeek - weekOffset:', weekOffset);
-    // console.log('ðŸ“… DEBUG - Oggi:', now.toLocaleDateString('it-IT'), 'day:', currentDay);
-    // console.log('ðŸ“… DEBUG - LunedÃ¬:', monday.toLocaleDateString('it-IT'));
-    // console.log('ðŸ“… DEBUG - VenerdÃ¬:', friday.toLocaleDateString('it-IT'));
+    // console.log('📅 DEBUG findSlotsInWeek - weekOffset:', weekOffset);
+    // console.log('📅 DEBUG - Oggi:', now.toLocaleDateString('it-IT'), 'day:', currentDay);
+    // console.log('📅 DEBUG - Lunedì:', monday.toLocaleDateString('it-IT'));
+    // console.log('📅 DEBUG - Venerdì:', friday.toLocaleDateString('it-IT'));
     
     const slots = await getAvailableSlots(monday, friday);
     
@@ -245,7 +248,7 @@ export async function findFirstDayWithSlot(period = 'any', weekOffset = 0) {
 /**
  * Crea appuntamento
  */
-export async function createAppointment(startDateTime, customerName, customerPhone, address) {
+export async function createAppointment(startDateTime, customerName, customerPhone, address, note = null) {
     try {
         const auth = await getAuthenticatedClient();
         const calendar = google.calendar({ version: 'v3', auth });
@@ -253,7 +256,7 @@ export async function createAppointment(startDateTime, customerName, customerPho
         const endDateTime = new Date(startDateTime.getTime() + SLOT_DURATION_MINUTES * 60000);
         
         // Formatta date in formato ISO senza conversione UTC
-        // Google Calendar interpreterÃ  l'orario secondo il timeZone specificato
+        // Google Calendar interpreterà l'orario secondo il timeZone specificato
         const formatDateTimeForCalendar = (date) => {
             const year = date.getFullYear();
             const month = String(date.getMonth() + 1).padStart(2, '0');
@@ -264,9 +267,15 @@ export async function createAppointment(startDateTime, customerName, customerPho
             return `${year}-${month}-${day}T${hours}:${minutes}:${seconds}`;
         };
         
+        // Costruisci la descrizione con la nota opzionale
+        let description = `Cliente: ${customerName}\nTelefono: ${customerPhone}\nIndirizzo: ${address}`;
+        if (note) {
+            description += `\n\nMotivazione:\n${note}`;
+        }
+        
         const event = {
             summary: `Intervento - ${customerName}`,
-            description: `Cliente: ${customerName}\nTelefono: ${customerPhone}\nIndirizzo: ${address}`,
+            description: description,
             start: {
                 dateTime: formatDateTimeForCalendar(startDateTime),
                 timeZone: 'Europe/Rome',
@@ -299,7 +308,7 @@ export async function createAppointment(startDateTime, customerName, customerPho
             },
         };
     } catch (error) {
-        console.error('âŒ Errore creazione evento:', error);
+        // console.error('❌ Errore creazione evento:', error);
         throw error;
     }
 }
@@ -313,31 +322,46 @@ export async function parseSchedulingRequest(userRequest) {
     
     // "primo slot disponibile"
     if (request.includes('primo') && (request.includes('disponibile') || request.includes('libero'))) {
-        const slot = await findFirstAvailableSlot();
-        if (!slot) {
+        // Cerca a partire da DOMANI, non oggi
+        const tomorrow = new Date(now);
+        tomorrow.setDate(now.getDate() + 1);
+        tomorrow.setHours(0, 0, 0, 0);
+        
+        const twoWeeksLater = new Date(tomorrow.getTime() + 14 * 24 * 60 * 60 * 1000);
+        
+        const slots = await getAvailableSlots(tomorrow, twoWeeksLater);
+        
+        if (!slots || slots.length === 0) {
             return { 
                 type: 'no_slots', 
                 message: 'Non ci sono slot disponibili nelle prossime 2 settimane.' 
             };
         }
+        
+        const firstSlot = slots[0];
         return { 
             type: 'first_available', 
-            slot: slot,
-            message: `Il primo slot disponibile Ã¨ ${slot.date} alle ore ${slot.time}`,
+            slot: firstSlot,
+            message: `Il primo slot disponibile è ${firstSlot.date} alle ore ${firstSlot.time}`,
         };
     }
     
     let weekOffset = 0;
     let specificDate = null;
     
+    // ❌ BLOCCA "oggi" - non permettere prenotazioni per oggi
     if (request.includes('oggi')) {
-        specificDate = new Date(now);
-        specificDate.setHours(0, 0, 0, 0);
-    } else if (request.includes('domani')) {
+        return {
+            type: 'today_not_allowed',
+            message: 'Mi dispiace, ma non possiamo prenotare appuntamenti per oggi. Il primo slot disponibile è da domani. Vuole verificare la disponibilità per domani?',
+        };
+    } 
+    else if (request.includes('domani')) {
         specificDate = new Date(now);
         specificDate.setDate(now.getDate() + 1);
         specificDate.setHours(0, 0, 0, 0);
-    } else if (request.includes('prossima settimana') || request.includes('settimana prossima')) {
+    } 
+    else if (request.includes('prossima settimana') || request.includes('settimana prossima')) {
         weekOffset = 1;
     }
     
@@ -347,14 +371,14 @@ export async function parseSchedulingRequest(userRequest) {
     
     // Controlla se la data richiesta cade nel weekend
     if (specificDate && isWeekend(specificDate)) {
-        const dayName = request.includes('oggi') ? 'oggi' : 'domani';
+        const dayName = 'domani'; // Solo domani può essere weekend qui
         return {
             type: 'weekend',
-            message: `Mi dispiace, ma ${dayName} cade nel weekend e i nostri tecnici non lavorano. Possiamo fissare un appuntamento per lunedÃ¬?`,
+            message: `Mi dispiace, ma ${dayName} cade nel weekend e i nostri tecnici non lavorano. Possiamo fissare un appuntamento per lunedì?`,
         };
     }
     
-    // Se Ã¨ una data specifica (oggi/domani), cerca solo in quel giorno
+    // Se è una data specifica (solo domani ora), cerca solo in quel giorno
     if (specificDate) {
         const endOfDay = new Date(specificDate);
         endOfDay.setHours(23, 59, 59, 999);
@@ -362,23 +386,22 @@ export async function parseSchedulingRequest(userRequest) {
         const slots = await getAvailableSlots(specificDate, endOfDay);
         
         // DEBUG: Log per capire cosa sta succedendo
-        // console.log('ðŸ” DEBUG - Data richiesta:', specificDate.toLocaleDateString('it-IT'));
-        // console.log('ðŸ” DEBUG - Tutti gli slot trovati:', slots.map(s => `${s.time} (ora: ${s.start.getHours()})`));
-        // console.log('ðŸ” DEBUG - Period richiesto:', period);
-        // console.log('ðŸ” DEBUG - WORKING_HOURS.lunchEnd:', WORKING_HOURS.lunchEnd);
+       // console.log('🔍 DEBUG - Data richiesta:', specificDate.toLocaleDateString('it-IT'));
+       // console.log('🔍 DEBUG - Tutti gli slot trovati:', slots.map(s => `${s.time} (ora: ${s.start.getHours()})`));
+       // console.log('🔍 DEBUG - Period richiesto:', period);
+       // console.log('🔍 DEBUG - WORKING_HOURS.lunchEnd:', WORKING_HOURS.lunchEnd);
         
         let filteredSlots = slots;
         if (period === 'morning') filteredSlots = slots.filter(s => s.start.getHours() < WORKING_HOURS.lunchStart);
         else if (period === 'afternoon') filteredSlots = slots.filter(s => s.start.getHours() >= WORKING_HOURS.lunchEnd);
         
-        // console.log('ðŸ” DEBUG - Slot dopo filtro:', filteredSlots.map(s => s.time));
+       // console.log('🔍 DEBUG - Slot dopo filtro:', filteredSlots.map(s => s.time));
         
         if (filteredSlots.length === 0) {
-            const dayName = request.includes('oggi') ? 'oggi' : 'domani';
             const periodName = period === 'morning' ? 'la mattina' : period === 'afternoon' ? 'il pomeriggio' : '';
             return {
                 type: 'no_slots',
-                message: `Non ci sono slot disponibili ${dayName} ${periodName}.`,
+                message: `Non ci sono slot disponibili domani ${periodName}.`,
             };
         }
         
@@ -386,11 +409,11 @@ export async function parseSchedulingRequest(userRequest) {
             type: 'slots_found',
             date: filteredSlots[0].date,
             slots: filteredSlots,
-            message: `${request.includes('oggi') ? 'Oggi' : 'Domani'} ${period === 'afternoon' ? 'pomeriggio' : period === 'morning' ? 'mattina' : ''} ci sono questi slot: ${filteredSlots.map(s => s.time).join(', ')}`,
+            message: `Domani ${period === 'afternoon' ? 'pomeriggio' : period === 'morning' ? 'mattina' : ''} ci sono questi slot: ${filteredSlots.map(s => s.time).join(', ')}`,
         };
     }
     
-    // Altrimenti cerca nella settimana
+    // Altrimenti cerca nella settimana (PARTENDO DA DOMANI)
     const dayData = await findFirstDayWithSlot(period, weekOffset);
     
     if (!dayData) {
@@ -404,6 +427,6 @@ export async function parseSchedulingRequest(userRequest) {
         type: 'slots_found',
         date: dayData.date,
         slots: dayData.slots,
-        message: `${weekOffset === 1 ? 'La prossima settimana' : 'Questa settimana'}, il primo giorno ${period === 'morning' ? 'con slot la mattina' : period === 'afternoon' ? 'con slot il pomeriggio' : 'disponibile'} Ã¨ ${dayData.date}. Slot: ${dayData.slots.map(s => s.time).join(', ')}`,
+        message: `${weekOffset === 1 ? 'La prossima settimana' : 'Questa settimana'}, il primo giorno ${period === 'morning' ? 'con slot la mattina' : period === 'afternoon' ? 'con slot il pomeriggio' : 'disponibile'} è ${dayData.date}. Slot: ${dayData.slots.map(s => s.time).join(', ')}`,
     };
 }
