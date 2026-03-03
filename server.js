@@ -360,7 +360,7 @@ fastify.register(async (fastify) => {
         };
 		
 
-        const openAiWs = new WebSocket('wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview', {
+        openAiWs = new WebSocket('wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview', {
             headers: {
                 Authorization: `Bearer ${OPENAI_API_KEY}`,
                 'OpenAI-Beta': 'realtime=v1'
@@ -748,17 +748,18 @@ fastify.register(async (fastify) => {
         });
 
         conn.on('close', () => {
-            console.log('âŒ Twilio WebSocket connection closed');
-            if (openAiWs.readyState === WebSocket.OPEN) {
-                console.log('ðŸ”’ Closing OpenAI WebSocket as well');
-                openAiWs.close();
-            } else {
-                console.log('âœ… OpenAI WebSocket already closed');
-            }
+            console.log('?? Twilio WebSocket closed');
+			cleanup();
         });
+		
+		conn.on('error', (error) => {
+			console.error('? Twilio WebSocket error:', error);
+			cleanup();
+		});
 
         openAiWs.on('error', (err) => {
             console.error('Errore OpenAI WS:', err);
+			cleanup();
         });
     });
 });
